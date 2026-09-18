@@ -749,6 +749,10 @@ and HTML body of the website's CLI reference page.
 
 Running the executable without a subcommand is equivalent to `view` without arguments.
 
+`--output=jsonl` is a renderer, not a second interface: it writes the same messages, activity
+updates, and `--json` payloads as one JSON object per line on standard output, and command code
+never branches on it.
+
 ### Exit codes
 
 Exit codes are a public interface; their table lives in

@@ -23,7 +23,6 @@ In terminals with hyperlink support, click a PR label to open it on GitHub. The 
 
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -188,7 +187,7 @@ def _run_status(
         elif (hint := merge_details_hint(result)) is not None:
             console.note(hint)
     if as_json:
-        console.machine_output(json.dumps({"stacks": json_stacks}, indent=2))
+        console.machine_output({"stacks": json_stacks})
     return exit_code
 
 

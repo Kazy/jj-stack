@@ -15,7 +15,7 @@ import jj_stack.console as console
 import jj_stack.ui as ui
 
 _TOP_LEVEL_HIDDEN_OPTION_STRINGS = frozenset(
-    {"--repository", "--config", "--config-file", "--debug", "--time-output"}
+    {"--repository", "--config", "--config-file", "--debug", "--output", "--time-output"}
 )
 _COMMON_OPTION_STRINGS = frozenset(
     {
@@ -26,6 +26,7 @@ _COMMON_OPTION_STRINGS = frozenset(
         "--config-file",
         "--debug",
         "--color",
+        "--output",
         "--time-output",
     }
 )
@@ -497,8 +498,8 @@ def _top_level_usage_message(*, include_hidden: bool) -> ui.Message:
             t"[{ui.cmd('--repository REPO')}] "
             t"[{ui.cmd('--config NAME=VALUE')}] [{ui.cmd('--config-file PATH')}] "
             t"[{ui.cmd('--debug')}] [{ui.cmd('--color WHEN')}] "
-            t"[{ui.cmd('--time-output')}] [{ui.cmd('--version')}] "
-            t"[{ui.cmd('<command>')} ...]"
+            t"[{ui.cmd('--output FORMAT')}] [{ui.cmd('--time-output')}] "
+            t"[{ui.cmd('--version')}] [{ui.cmd('<command>')} ...]"
         )
     return (
         t"{ui.cmd('jj-stack')} [{ui.cmd('--help')}] [{ui.cmd('--color WHEN')}] "

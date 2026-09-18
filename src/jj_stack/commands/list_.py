@@ -17,7 +17,6 @@ such as `5 PRs` links to the topmost PR in that stack.
 
 from __future__ import annotations
 
-import json
 import sys
 from collections import Counter
 from dataclasses import dataclass
@@ -198,12 +197,7 @@ def _run_list(
         )
     incomplete = bool(duplicate_branches) or any(row.incomplete for row in rows)
     if as_json:
-        console.machine_output(
-            json.dumps(
-                _json_list_payload(orphan_rows=orphan_rows, rows=rows),
-                indent=2,
-            )
-        )
+        console.machine_output(_json_list_payload(orphan_rows=orphan_rows, rows=rows))
         return EXIT_INCOMPLETE if incomplete else 0
     jj_color = color_when(stdout_is_tty=sys.stdout.isatty())
     with console.spinner(description="Rendering jj change IDs"):

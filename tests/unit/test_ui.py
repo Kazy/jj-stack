@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tomllib
 from io import StringIO
 
@@ -32,7 +33,7 @@ def test_color_when_prefers_the_flag_then_jj_config_then_the_terminal() -> None:
 
 def test_machine_output_bypasses_terminal_formatting() -> None:
     output = StringIO()
-    payload = '{"url":"https://example.test/' + ("long-path/" * 20) + '"}'
+    payload = {"url": "https://example.test/" + ("long-path/" * 20)}
 
     with console_module.configured_console(
         stdout=output,
@@ -42,7 +43,20 @@ def test_machine_output_bypasses_terminal_formatting() -> None:
     ):
         console_module.machine_output(payload)
 
-    assert output.getvalue() == f"{payload}\n"
+    assert output.getvalue() == json.dumps(payload, indent=2) + "\n"
+
+
+def test_jsonl_table_text_has_no_ansi_even_when_the_environment_forces_color(monkeypatch):
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    output = StringIO()
+    with console_module.configured_console(color="never", output_format="jsonl", stdout=output):
+        console_module.output(
+            ui_module.DataTable(columns=(ui_module.TableColumn("check"),), rows=(("GitHub",),))
+        )
+    record = json.loads(output.getvalue())
+    assert record["type"] == "output"
+    assert "check" in record["text"] and "GitHub" in record["text"]
+    assert "\x1b" not in record["text"]
 
 
 def test_output_neutralizes_terminal_escapes_from_change_descriptions() -> None:

@@ -13,9 +13,14 @@
 #   user-facing text does not need per-call Rich escaping.
 #
 # - Optional time-prefixing lives here alongside the output it affects.
+#
+# - `--output=jsonl` is a third renderer of the same calls: every helper writes one JSON
+#   object per line to stdout instead of styled text, so command modules never branch on it.
 
 from __future__ import annotations
 
+import io
+import json
 import sys
 import time
 from collections.abc import Generator, Mapping
@@ -49,6 +54,7 @@ ActionStatus = Literal["applied", "blocked", "planned", "skipped"]
 
 ColorMode = Literal["auto", "always", "never"]
 RequestedColorMode = Literal["always", "auto", "debug", "never"]
+OutputFormat = Literal["text", "jsonl"]
 StyleArg = Style | str
 type ConsoleObject = ui.Renderable | ConsoleRenderable | RichCast
 
@@ -208,6 +214,30 @@ class _TextSpinner:
 
 
 @dataclass(slots=True)
+class _JsonlStatus:
+    """Report the current activity as `status` records; `total` adds a count."""
+
+    text: str = ""
+    completed: int = 0
+    total: int | None = None
+
+    def update(self, description: str) -> None:
+        if description != self.text:
+            self.text = description
+            self.emit()
+
+    def advance(self, amount: int = 1) -> None:
+        self.completed += amount
+        self.emit()
+
+    def emit(self) -> None:
+        record: dict[str, object] = {"type": "status", "text": self.text}
+        if self.total is not None:
+            record |= {"completed": self.completed, "total": self.total}
+        _write_jsonl(record)
+
+
+@dataclass(slots=True)
 class _RichProgressHandle:
     """Advance one Rich progress task."""
 
@@ -292,6 +322,7 @@ _EFFECTIVE_COLOR: RequestedColorMode | None = None
 _STDOUT_STREAM: IO[str] = sys.stdout
 _STDERR_STREAM: IO[str] = sys.stderr
 _TIME_OUTPUT = False
+_JSONL = False
 
 
 def rich_color_mode(color_mode: RequestedColorMode | None) -> ColorMode:
@@ -312,11 +343,13 @@ def configured_console(
     stderr: IO[str] | None = None,
     stdout: IO[str] | None = None,
     time_output: bool = False,
+    output_format: OutputFormat = "text",
 ):
     """Temporarily install shared stdout and stderr consoles.
 
     `color` is the `--color` choice; `adopt_jj_config` fills in jj's own setting and theme once
-    command bootstrap has read them.
+    command bootstrap has read them. `output_format="jsonl"` sends every helper's output to
+    stdout as JSON Lines instead.
     """
 
     global _STDOUT_CONSOLE
@@ -326,6 +359,7 @@ def configured_console(
     global _STDOUT_STREAM
     global _STDERR_STREAM
     global _TIME_OUTPUT
+    global _JSONL
     previous = (
         _STDOUT_CONSOLE,
         _STDERR_CONSOLE,
@@ -334,6 +368,7 @@ def configured_console(
         _STDOUT_STREAM,
         _STDERR_STREAM,
         _TIME_OUTPUT,
+        _JSONL,
     )
     _STDOUT_CONSOLE, _STDERR_CONSOLE, _SEMANTIC_STYLES = _build_consoles(
         color_mode=rich_color_mode(color),
@@ -346,6 +381,7 @@ def configured_console(
     _STDOUT_STREAM = sys.stdout if stdout is None else stdout
     _STDERR_STREAM = sys.stderr if stderr is None else stderr
     _TIME_OUTPUT = time_output
+    _JSONL = output_format == "jsonl"
     try:
         yield
     finally:
@@ -357,6 +393,7 @@ def configured_console(
             _STDOUT_STREAM,
             _STDERR_STREAM,
             _TIME_OUTPUT,
+            _JSONL,
         ) = previous
 
 
@@ -458,18 +495,40 @@ def _coerce_renderable(value: ConsoleObject) -> RenderableType:
     return value
 
 
+def _print(
+    kind: str, console: _ConfiguredConsole, objects: tuple[ConsoleObject, ...], kwargs: dict
+) -> None:
+    renderables = tuple(_coerce_renderable(obj) for obj in objects)
+    if not _JSONL:
+        console.print(*renderables, **kwargs)
+        return
+    # Render as a wide, colorless terminal would, so tables and hanging indents keep their
+    # shape while the record carries only text.
+    buffer = io.StringIO()
+    Console(file=buffer, force_terminal=False, no_color=True, width=10_000).print(
+        *renderables, **kwargs
+    )
+    _write_jsonl({"type": kind, "text": buffer.getvalue().rstrip("\n")})
+
+
+def _write_jsonl(record: dict[str, object]) -> None:
+    _STDOUT_STREAM.write(json.dumps(record) + "\n")
+    _STDOUT_STREAM.flush()
+
+
 def output(*objects: ConsoleObject, **kwargs) -> None:
     """Write plain user-facing output to stdout."""
 
-    _STDOUT_CONSOLE.print(*(_coerce_renderable(obj) for obj in objects), **kwargs)
+    _print("output", _STDOUT_CONSOLE, objects, kwargs)
 
 
-def machine_output(text: str) -> None:
-    """Write one machine-readable payload without terminal rendering."""
+def machine_output(payload: object) -> None:
+    """Write one JSON payload without terminal rendering, or as a JSONL `result` record."""
 
-    _STDOUT_STREAM.write(text)
-    if not text.endswith("\n"):
-        _STDOUT_STREAM.write("\n")
+    if _JSONL:
+        _write_jsonl({"type": "result", "data": payload})
+        return
+    _STDOUT_STREAM.write(json.dumps(payload, indent=2) + "\n")
     _STDOUT_STREAM.flush()
 
 
@@ -477,20 +536,20 @@ def error(*objects: ConsoleObject, **kwargs) -> None:
     """Write styled error output to stderr."""
 
     kwargs.setdefault("style", semantic_style("error heading") or "red")
-    _STDERR_CONSOLE.print(*(_coerce_renderable(obj) for obj in objects), **kwargs)
+    _print("error", _STDERR_CONSOLE, objects, kwargs)
 
 
 def stderr_output(*objects: ConsoleObject, **kwargs) -> None:
     """Write plain user-facing output to stderr."""
 
-    _STDERR_CONSOLE.print(*(_coerce_renderable(obj) for obj in objects), **kwargs)
+    _print("output", _STDERR_CONSOLE, objects, kwargs)
 
 
 def warning(*objects: ConsoleObject, **kwargs) -> None:
     """Write styled warning output to stderr."""
 
     kwargs.setdefault("style", semantic_style("warning heading") or "yellow")
-    _STDERR_CONSOLE.print(*(_coerce_renderable(obj) for obj in objects), **kwargs)
+    _print("warning", _STDERR_CONSOLE, objects, kwargs)
 
 
 def action_row(*, kind: str | None, status: ActionStatus, body: ui.Message) -> None:
@@ -516,7 +575,19 @@ def note(*objects: ConsoleObject, **kwargs) -> None:
     """Write styled note output to stdout."""
 
     kwargs.setdefault("style", semantic_style("hint heading") or "cyan")
-    _STDOUT_CONSOLE.print(*(_coerce_renderable(obj) for obj in objects), **kwargs)
+    _print("note", _STDOUT_CONSOLE, objects, kwargs)
+
+
+@contextmanager
+def _jsonl_status(description: str, *, total: int | None = None) -> Generator[_JsonlStatus]:
+    """Report one activity from start to finish; a null `text` marks the finish."""
+
+    handle = _JsonlStatus(total=total)
+    handle.update(description)
+    try:
+        yield handle
+    finally:
+        _write_jsonl({"type": "status", "text": None})
 
 
 @contextmanager
@@ -524,24 +595,33 @@ def spinner(*, description: str, report_changes: bool = False) -> Generator[Spin
     """Render a transient spinner, optionally logging changed status when stderr is redirected."""
 
     with timed("phase", description):
-        if not _stream_supports_live_progress(_STDERR_STREAM):
+        if _JSONL:
+            with _jsonl_status(description) as handle:
+                yield handle
+        elif not _stream_supports_live_progress(_STDERR_STREAM):
             handle = _TextSpinner() if report_changes else _NullSpinner()
             handle.update(description)
             yield handle
-            return
-
-        progress_console = _progress_console(
-            stream=_STDERR_STREAM, color_mode=rich_color_mode(_EFFECTIVE_COLOR)
-        )
-        with progress_console.status(description) as status:
-            yield _RichSpinnerHandle(status=status)
+        else:
+            progress_console = _progress_console(
+                stream=_STDERR_STREAM, color_mode=rich_color_mode(_EFFECTIVE_COLOR)
+            )
+            with progress_console.status(description) as status:
+                yield _RichSpinnerHandle(status=status)
 
 
 @contextmanager
 def progress(*, description: str, total: int) -> Generator[ProgressLike]:
     """Render a TTY-only transient progress bar on stderr."""
 
-    if total <= 0 or not _stream_supports_live_progress(_STDERR_STREAM):
+    if total <= 0:
+        yield _NullProgress()
+        return
+    if _JSONL:
+        with _jsonl_status(description, total=total) as handle:
+            yield handle
+        return
+    if not _stream_supports_live_progress(_STDERR_STREAM):
         yield _NullProgress()
         return
 

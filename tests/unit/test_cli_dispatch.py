@@ -9,6 +9,53 @@ from jj_stack.cli import (
     build_parser,
     main,
 )
+from tests.support.json_schema import parse_jsonl_output
+
+
+def test_version_uses_the_selected_renderer_without_accessing_a_repo(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.chdir(tmp_path)
+    version = f"jj-stack {cli_module.__version__}"
+
+    assert main(["--output=jsonl", "--version"]) == 0
+    captured = capsys.readouterr()
+    assert parse_jsonl_output(captured.out) == [{"type": "output", "text": version}]
+    assert not captured.err
+
+    assert main(["--version"]) == 0
+    assert capsys.readouterr().out == version + "\n"
+
+
+def test_jsonl_rejects_editor_flags_before_repo_access(tmp_path, capsys):
+    argv = ["--repository", str(tmp_path / "missing"), "submit", "--output=jsonl"]
+    assert main([*argv, "--resume-edit", "saved.md"]) == 5
+    captured = capsys.readouterr()
+    records = parse_jsonl_output(captured.out)
+    assert [record["type"] for record in records] == ["error", "output"]
+    assert "--edit or --resume-edit" in records[0]["text"]
+    assert "--describe" in records[1]["text"]
+    assert not captured.err
+
+
+@pytest.mark.parametrize(
+    ("argv", "jsonl"),
+    [
+        (["--output=text", "--output", "jsonl", "bogus"], True),
+        (["--output=jsonl", "--output", "text", "bogus"], False),
+    ],
+)
+def test_parse_errors_respect_the_last_output_option(argv, jsonl, capsys):
+    assert main(argv) == 5
+    captured = capsys.readouterr()
+    if jsonl:
+        records = parse_jsonl_output(captured.out)
+        assert [record["type"] for record in records] == ["error", "output"]
+        assert "Unknown command bogus" in records[0]["text"]
+        assert not captured.err
+    else:
+        assert not captured.out
+        assert "Unknown command bogus" in captured.err
 
 
 def test_main_preserves_partial_handler_output_on_keyboard_interrupt(

@@ -101,6 +101,10 @@ jj-stack submit zvlyxwvk
 Commands that make changes can complete some work before failing. Preserve their output and
 inspect the repo again before retrying; a nonzero exit does not mean nothing happened.
 
+A GUI or another program that shows progress while a command runs can pass `--output=jsonl` to
+any command. Every message and activity update then arrives on standard output as one JSON object
+per line; see [streaming output](json-output.md#streaming-output).
+
 Follow the recovery command printed by jj-stack. In particular:
 
 - If `jj-stack sync` rebases changes into conflicts, follow

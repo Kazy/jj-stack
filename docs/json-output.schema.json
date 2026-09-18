@@ -2,13 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://jj-stack.dev/schemas/json-output.schema.json",
   "title": "jj-stack JSON command output",
-  "description": "Public JSON output for jj-stack view --json and list --json.",
+  "description": "Public JSON output for jj-stack view --json and list --json, and one record of --output=jsonl.",
   "oneOf": [
     {
       "$ref": "#/$defs/viewOutput"
     },
     {
       "$ref": "#/$defs/listOutput"
+    },
+    {
+      "$ref": "#/$defs/jsonlRecord"
     }
   ],
   "$defs": {
@@ -74,6 +77,82 @@
         "branch_moved",
         "divergent",
         "unknown"
+      ]
+    },
+    "jsonlRecord": {
+      "description": "One line of --output=jsonl: a message, the current activity, or a --json payload.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "text"
+          ],
+          "properties": {
+            "type": {
+              "enum": [
+                "output",
+                "note",
+                "warning",
+                "error"
+              ]
+            },
+            "text": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "text"
+          ],
+          "properties": {
+            "type": {
+              "const": "status"
+            },
+            "text": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "completed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "data"
+          ],
+          "properties": {
+            "type": {
+              "const": "result"
+            },
+            "data": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/viewOutput"
+                },
+                {
+                  "$ref": "#/$defs/listOutput"
+                }
+              ]
+            }
+          }
+        }
       ]
     },
     "listOutput": {

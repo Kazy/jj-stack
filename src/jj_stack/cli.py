@@ -51,7 +51,7 @@ from jj_stack.cli_help import (
     render_website_reference,
 )
 from jj_stack.completion import emit_shell_completion, validate_jj_alias
-from jj_stack.console import RequestedColorMode, configured_console
+from jj_stack.console import OutputFormat, RequestedColorMode, configured_console
 from jj_stack.errors import (
     EXIT_INTERRUPTED,
     CliError,
@@ -74,7 +74,8 @@ Use `jj-stack merge` when the PRs at the bottom are ready; it waits for GitHub a
 your local stack. Run `jj-stack sync` only after a merge it did not wait for.
 """
 _REORDERABLE_GLOBAL_FLAGS = frozenset({"--debug", "--time-output"})
-_REORDERABLE_GLOBAL_OPTIONS_WITH_VALUES = frozenset({"--repository", "--color"})
+_REORDERABLE_GLOBAL_OPTIONS_WITH_VALUES = frozenset({"--repository", "--color", "--output"})
+_OUTPUT_CHOICES: tuple[OutputFormat, ...] = ("text", "jsonl")
 _HELP_FLAGS = frozenset({"-h", "--help"})
 _COMPLETION_HELP = "Print shell completion setup for bash, zsh, or fish"
 _HELP_HELP = "Show top-level help, or help for one command"
@@ -232,8 +233,8 @@ def build_parser() -> ArgumentParser:
     add_help_argument(
         parser,
         "--version",
-        action="version",
-        version=f"%(prog)s {__version__}",
+        action="store_true",
+        dest="show_version",
         help=t"Show the {ui.code('jj-stack')} version and exit",
     )
 
@@ -756,8 +757,11 @@ def _print_cli_error(error: CliError) -> None:
 
 
 def _print_early_cli_error(error: CliError, *, normalized_argv: Sequence[str]) -> None:
-    requested_color_mode = _color_arg_from_argv(normalized_argv)
-    with configured_console(color=requested_color_mode):
+    output_format = _early_option(normalized_argv, "--output", _OUTPUT_CHOICES) or "text"
+    color = _early_option(normalized_argv, "--color", _COLOR_CHOICES)
+    with configured_console(
+        color="never" if output_format == "jsonl" else color, output_format=output_format
+    ):
         _print_cli_error(error)
 
 
@@ -791,18 +795,21 @@ def _unknown_command_error(command_name: str) -> CliError:
     )
 
 
-def _color_arg_from_argv(argv: Sequence[str]) -> RequestedColorMode | None:
+def _early_option[T: str](argv: Sequence[str], option: str, choices: Sequence[T]) -> T | None:
+    """Read one global option before argparse runs, so a parse error is reported its way."""
+
+    selected = None
     for index, arg in enumerate(argv):
-        if arg.startswith("--color="):
+        if arg == "--":
+            break
+        if arg.startswith(f"{option}="):
             value = arg.partition("=")[2]
-        elif arg == "--color" and index + 1 < len(argv):
+        elif arg == option and index + 1 < len(argv):
             value = argv[index + 1]
         else:
             continue
-        if value in _COLOR_CHOICES:
-            return value
-        return None
-    return None
+        selected = next((choice for choice in choices if choice == value), None)
+    return selected
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -820,12 +827,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         return resolve_exit_code(error)
     args.cli_args = cli_args
     args.normalized_argv = tuple(normalized_argv)
-    effective_color = "never" if args.command == "in-use" else args.color
+    effective_color = (
+        "never" if args.command == "in-use" or args.output == "jsonl" else args.color
+    )
     try:
-        with configured_console(color=effective_color, time_output=args.time_output):
+        with configured_console(
+            color=effective_color, output_format=args.output, time_output=args.time_output
+        ):
             with _time_output(enabled=args.time_output, imports_seconds=imports_seconds):
                 handler = args.handler
                 try:
+                    if args.show_version:
+                        console.output(f"jj-stack {__version__}")
+                        return 0
+                    if args.output == "jsonl" and getattr(args, "edit", False):
+                        raise UsageError(
+                            t"{ui.cmd('--output=jsonl')} cannot be combined with "
+                            t"{ui.cmd('--edit')} or {ui.cmd('--resume-edit')}.",
+                            hint=t"Use {ui.cmd('--describe CHANGE=FILE')} to supply a PR "
+                            t"description.",
+                        )
                     return handler(args)
                 except CliError as error:
                     _print_cli_error(error)
@@ -957,6 +978,17 @@ def _add_common_options(
         default=SUPPRESS if suppress_defaults else None,
         metavar="WHEN",
         help=(t"When to colorize output; possible values: {ui.join(ui.metavar, _COLOR_CHOICES)}"),
+    )
+    add_help_argument(
+        parser,
+        "--output",
+        choices=_OUTPUT_CHOICES,
+        default=SUPPRESS if suppress_defaults else "text",
+        metavar="FORMAT",
+        help=(
+            t"Print terminal text, or one JSON object per line for another program to read; "
+            t"possible values: {ui.join(ui.metavar, _OUTPUT_CHOICES)}"
+        ),
     )
     parser.add_argument(
         "--time-output",
