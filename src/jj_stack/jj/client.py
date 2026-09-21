@@ -857,21 +857,24 @@ class JjClient:
             ) from error
 
     def edit_commit(self, commit_id: CommitId, *, cli_args: JjCliArgs = _NO_CLI_ARGS) -> None:
-        """Edit the given commit in the current workspace."""
+        """Edit the given commit in the current workspace.
+
+        The caller's immutability revset stays in force: an edit rewrites nothing, so jj's check
+        is the safety boundary for a PR commit that another bookmark also protects.
+        """
 
         self._run_jj(("edit", commit_id), manage_working_copy=True, cli_args=cli_args)
 
-    def new_empty_change(self, parent: CommitId, *, cli_args: JjCliArgs = _NO_CLI_ARGS) -> None:
+    def new_empty_change(self, parent: CommitId) -> None:
         """Check out a new empty change on the given commit in the current workspace."""
 
-        self._run_jj(("new", parent), manage_working_copy=True, cli_args=cli_args)
+        self._run_jj(("new", parent), manage_working_copy=True)
 
     def rebase_changes(
         self,
         *,
         change_ids: Sequence[ChangeId],
         destination: CommitId,
-        cli_args: JjCliArgs = _NO_CLI_ARGS,
     ) -> None:
         """Rebase the current visible commits of the named changes onto one destination.
 
@@ -885,7 +888,7 @@ class JjClient:
         self._run_jj(
             ("rebase", "-r", change_ids_revset(ordered_change_ids), "-d", destination),
             manage_working_copy=True,
-            cli_args=cli_args,
+            ignore_immutable=True,
         )
 
     def prepare_rebase_changes(
@@ -893,7 +896,6 @@ class JjClient:
         *,
         change_ids: Sequence[ChangeId],
         destination: CommitId,
-        cli_args: JjCliArgs = _NO_CLI_ARGS,
     ) -> str:
         """Compute a rebase in an unintegrated operation and return its operation ID."""
 
@@ -909,8 +911,8 @@ class JjClient:
                 "-d",
                 destination,
             ),
+            ignore_immutable=True,
             return_stderr=True,
-            cli_args=cli_args,
         )
         match = re.search(
             r"Operation left uncommitted because --no-integrate-operation was requested: "
@@ -928,7 +930,6 @@ class JjClient:
         *,
         change_ids: Sequence[ChangeId],
         operation_id: str,
-        cli_args: JjCliArgs = _NO_CLI_ARGS,
     ) -> dict[ChangeId, tuple[LocalCommit, ...]]:
         """Return visible commits for logical changes in one unintegrated operation."""
 
@@ -945,7 +946,6 @@ class JjClient:
                 "-T",
                 _COMMIT_TEMPLATE,
             ),
-            cli_args=cli_args,
         )
         grouped: dict[ChangeId, list[LocalCommit]] = {
             change_id: [] for change_id in ordered_change_ids
@@ -976,16 +976,14 @@ class JjClient:
             raise JjCommandError(t"{ui.cmd('git rev-parse')} returned incomplete tree data.")
         return dict(zip(ordered_commit_ids, tree_ids, strict=True))
 
-    def abandon_commits(
-        self, commit_ids: Sequence[CommitId], *, cli_args: JjCliArgs = _NO_CLI_ARGS
-    ) -> None:
+    def abandon_commits(self, commit_ids: Sequence[CommitId]) -> None:
         """Abandon commits, rebasing descendants and removing bookmarks that point to them."""
 
         ordered_commit_ids = tuple(commit_ids)
         if not ordered_commit_ids:
             return
         self._run_jj(
-            ("abandon", *ordered_commit_ids), manage_working_copy=True, cli_args=cli_args
+            ("abandon", *ordered_commit_ids), manage_working_copy=True, ignore_immutable=True
         )
 
     def _query_commits(self, revset: str, *, limit: int | None = None) -> list[LocalCommit]:
@@ -1031,14 +1029,24 @@ class JjClient:
         args: Sequence[str],
         *,
         manage_working_copy: bool = False,
+        ignore_immutable: bool = False,
         return_stderr: bool = False,
         cli_args: JjCliArgs = _NO_CLI_ARGS,
     ) -> str:
-        """Run jj without touching the working copy unless the caller explicitly requires it."""
+        """Run jj without touching the working copy unless the caller explicitly requires it.
+
+        Planned rewrites pass ignore_immutable instead of an immutability revset: the caller has
+        already checked that every commit it rewrites is mutable, and a revset that names a PR
+        bookmark makes jj rebase the hidden commit it points at back into view.
+        """
 
         use_working_copy = manage_working_copy or self._initial_working_copy_snapshot_pending
         self._initial_working_copy_snapshot_pending = False
-        extra_args = () if use_working_copy else ("--ignore-working-copy",)
+        extra_args: list[str] = []
+        if not use_working_copy:
+            extra_args.append("--ignore-working-copy")
+        if ignore_immutable:
+            extra_args.append("--ignore-immutable")
         return self._run_command(
             ["jj", *self._cli_args.argv, *cli_args.argv, *extra_args, *args],
             missing_tool_message=t"{ui.cmd('jj')} is not installed or is not on PATH.",

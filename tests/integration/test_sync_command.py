@@ -546,6 +546,35 @@ def test_sync_refuses_to_rebase_an_edited_survivor_beside_its_github_rewrite(
     assert fake_repo.prs == prs_before
 
 
+def test_sync_adopts_a_partial_merge_beside_stale_pr_bookmarks(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    repo, fake_repo = init_fake_github_repo_with_submitted_stack(tmp_path, size=2)
+    config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
+    on_trunk, survivor = selected_stack(repo).changes
+    # A targeted fetch leaves both PR branches visible as untracked bookmarks at the submitted
+    # commits, and the namespace fetch exclusion keeps them there while sync rewrites the stack.
+    prs = TrackingStore.for_repo(repo).load().prs
+    branches = [prs[change.change_id].pr_identity.head_ref for change in (on_trunk, survivor)]
+    fetch = ["jj", "git", "fetch", "--remote", "origin"]
+    run_command([*fetch, "--branch", branches[0], "--branch", branches[1]], repo)
+    _simulate_stack_partial_merge(fake_repo)
+
+    exit_code = run_main(repo, config_path, "sync", survivor.change_id)
+    captured = capsys.readouterr()
+
+    assert exit_code == 0, (captured.out, captured.err)
+    copies = JjClient(repo).query_commits_by_change_ids((survivor.change_id,))
+    assert [copy.parents for copy in copies[survivor.change_id]] == [
+        (fake_repo.prs[1].merge_commit_sha,)
+    ]
+    assert JjClient(repo).query_commits_by_change_ids((on_trunk.change_id,)) == {
+        on_trunk.change_id: ()
+    }
+
+
 def test_sync_noop_after_partial_merge_does_not_read_pr_branch_targets_or_submit(
     tmp_path: Path,
     monkeypatch,

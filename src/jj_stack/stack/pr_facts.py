@@ -13,7 +13,6 @@ from jj_stack.errors import CliError
 from jj_stack.github.client import GithubClient, GithubClientError
 from jj_stack.github.stack_availability import github_stacks_unavailable_error
 from jj_stack.identifiers import ChangeId, CommitId
-from jj_stack.jj.cli_args import JjCliArgs
 from jj_stack.models.github import GithubPR, GithubRepo, GithubStack
 from jj_stack.models.tracking import TrackingState
 from jj_stack.stack.change_state import UNOBSERVED, TrackedPRObservation
@@ -30,8 +29,6 @@ class RepoFacts:
     prs_by_base: Mapping[str, tuple[GithubPR, ...]]
     repo: github_resolution.GithubRepoAddress
     prs: Mapping[ChangeId, TrackedPRObservation]
-    # The jj config that lets rewrites touch the observed PR-branch commits.
-    rewrite_args: JjCliArgs
 
 
 async def observe_prs(
@@ -136,7 +133,6 @@ async def observe_prs(
         prs_by_base=by_base,
         repo=repo,
         prs=prs,
-        rewrite_args=observed_locally.cli_args,
     )
 
 

@@ -166,7 +166,6 @@ def build_selected_convergence_plan(
         remaining_prs=submitted,
         remaining_changes=tuple(remaining_changes),
         working_copy_children=working_copy_children,
-        rewrite_args=observation.rewrite_args,
     )
     adopting = isinstance(effect, _GithubStackMerge) and adopts_github_rewrite(adopted)
     _require_no_divergent_remaining_changes(

@@ -201,16 +201,14 @@ def _apply_local_convergence(
         replaced = ()
         destination = trunk_commit_id
         attachment = nullcontext()
-    rewrite_args = actions.rewrite_args
     with attachment:
         if rebased:
             context.jj_client.rebase_changes(
                 change_ids=tuple(change.change_id for change in rebased),
                 destination=destination,
-                cli_args=rewrite_args,
             )
         if replaced:
-            context.jj_client.abandon_commits(replaced, cli_args=rewrite_args)
+            context.jj_client.abandon_commits(replaced)
         dependencies = _observe_removal_dependencies(context=context, actions=actions)
         abandoned = tuple(
             change.change.commit_id
@@ -225,8 +223,8 @@ def _apply_local_convergence(
                 for change in actions.on_trunk
                 if change.change is not None and change.change.commit_id in abandoned
             ):
-                context.jj_client.new_empty_change(trunk_commit_id, cli_args=rewrite_args)
-            context.jj_client.abandon_commits(abandoned, cli_args=rewrite_args)
+                context.jj_client.new_empty_change(trunk_commit_id)
+            context.jj_client.abandon_commits(abandoned)
         if rewritten:
             context.state_store.relink_prs(
                 replacements={
@@ -319,19 +317,16 @@ def _verified_local_rebase(
     local = plan.actions.remaining_changes
     desired = local
     operation_id: str | None = None
-    rewrite_args = plan.actions.rewrite_args
     if adopts_github_rewrite(adopted):
         operation_id = context.jj_client.prepare_rebase_changes(
             change_ids=tuple(
                 change.change_id for change in (*local, *plan.actions.working_copy_children)
             ),
             destination=base_commit_id,
-            cli_args=rewrite_args,
         )
         grouped = context.jj_client.query_commits_at_operation(
             change_ids=tuple(item.change_id for item in local),
             operation_id=operation_id,
-            cli_args=rewrite_args,
         )
         desired = tuple(
             commits[0] for item in local if len(commits := grouped[item.change_id]) == 1

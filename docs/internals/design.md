@@ -128,7 +128,9 @@ rewrite is not mistaken for a local copy. Two untracked remote bookmarks pointin
 commit prevent this exception, even if both are in the reserved namespace. Trunk, tags, and
 bookmarks outside the namespace still make their targets immutable. If the submitted commit and
 one local rewrite are both visible, the submitted commit is treated as the submitted snapshot
-rather than a second local candidate.
+rather than a second local candidate. Rewrites that a command has already planned run with jj's
+immutability check disabled: an immutability revset that names a namespace bookmark would
+resurrect the hidden commit it points at when jj rewrites that commit's ancestor.
 
 An unknown or mismatched bookmark creates no ownership. It remains untouched and does not block an
 independent stack. `submit` refuses to claim a colliding visible name for a new PR, while remote
