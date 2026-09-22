@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from tests import run_submit_property_scenarios as runner
@@ -51,3 +53,21 @@ def test_reproduction_preserves_search_budgets_seed_and_pytest_filter(
 def test_runner_requires_separator_before_pytest_arguments() -> None:
     with pytest.raises(SystemExit):
         runner.main(("1", "--no-sync", "-k", "generated_commands"))
+
+
+def test_reach_report_sums_shards_and_names_unreached_rules(tmp_path, capsys) -> None:
+    rules = ["edit", "merge", "sync"]
+    for shard, report in enumerate(
+        (
+            {"sequences": 4, "rules": rules, "fired": {"edit": 4, "merge": 1}},
+            {"sequences": 3, "rules": rules, "fired": {"edit": 3}},
+        )
+    ):
+        (tmp_path / f"shard-{shard}.json").write_text(json.dumps(report))
+
+    runner.print_reach(tmp_path)
+
+    out = capsys.readouterr().out
+    assert "Sequences: 7 in 2 shards" in out
+    assert "Rules fired (sequences): edit 7, merge 1" in out
+    assert "Rules never fired: sync" in out

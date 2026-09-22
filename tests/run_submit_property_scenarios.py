@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import shlex
 import subprocess
 import sys
+import tempfile
 from argparse import ArgumentParser, ArgumentTypeError
 from collections.abc import Sequence
 from pathlib import Path
@@ -102,21 +104,43 @@ def main(argv: Sequence[str] | None = None) -> int:
         reproduce.extend(("--", *pytest_args))
     print(f"Reproduce: {shlex.join(reproduce)}", flush=True)
     python = REPO_ROOT / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    return subprocess.run(
-        [
-            str(python),
-            "-m",
-            "pytest",
-            "-n",
-            str(jobs),
-            "--dist=worksteal",
-            f"--randomly-seed={chosen_seed}",
-            "tests/property/test_submit_property_scenarios.py",
-            *pytest_args,
-        ],
-        cwd=REPO_ROOT,
-        env=env,
-    ).returncode
+    with tempfile.TemporaryDirectory(prefix="jj-property-reach-") as report_dir:
+        env["JJ_STACK_PROPERTY_REPORT_DIR"] = report_dir
+        completed = subprocess.run(
+            [
+                str(python),
+                "-m",
+                "pytest",
+                "-n",
+                str(jobs),
+                "--dist=worksteal",
+                f"--randomly-seed={chosen_seed}",
+                "tests/property/test_submit_property_scenarios.py",
+                *pytest_args,
+            ],
+            cwd=REPO_ROOT,
+            env=env,
+        )
+        print_reach(Path(report_dir))
+    return completed.returncode
+
+
+def print_reach(report_dir: Path) -> None:
+    """Say how many sequences fired each rule across the shards, and which rules none did."""
+
+    reports = [json.loads(path.read_text()) for path in sorted(report_dir.glob("shard-*.json"))]
+    if not reports:
+        return
+    fired: dict[str, int] = {}
+    for report in reports:
+        for name, count in report["fired"].items():
+            fired[name] = fired.get(name, 0) + count
+    sequences = sum(report["sequences"] for report in reports)
+    ranked = sorted(fired, key=lambda name: (-fired[name], name))
+    unreached = sorted(set().union(*(report["rules"] for report in reports)) - fired.keys())
+    print(f"Sequences: {sequences} in {len(reports)} shards", flush=True)
+    print("Rules fired (sequences): " + ", ".join(f"{name} {fired[name]}" for name in ranked))
+    print("Rules never fired: " + (", ".join(unreached) or "none"), flush=True)
 
 
 if __name__ == "__main__":

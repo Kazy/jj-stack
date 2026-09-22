@@ -1,6 +1,10 @@
 """Fixed regressions and generated sequences share the same actions and assertions."""
 
+import json
+import os
+from collections import Counter
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from hypothesis import seed, settings
@@ -8,7 +12,7 @@ from hypothesis.database import DirectoryBasedExampleDatabase
 from hypothesis.stateful import run_state_machine_as_test
 from tests.run_submit_property_scenarios import EXAMPLES, SEED, SHARDS, STEPS
 from tests.support.stack_edit_scenarios import StackEditOperation
-from tests.support.stack_machine import StackMachine
+from tests.support.stack_machine import RULE_NAMES, StackMachine
 
 pytestmark = pytest.mark.fixed_property
 
@@ -101,16 +105,34 @@ def test_waiting_for_another_stack_completes_queued_prs(machine: StackMachine) -
 
 @pytest.mark.parametrize("shard", range(SHARDS))
 def test_generated_commands(shard: int) -> None:
+    machines: list[StackMachine] = []
+
     @seed(SEED + shard)
     def factory() -> StackMachine:
-        return StackMachine()
+        machines.append(StackMachine())
+        return machines[-1]
 
-    run_state_machine_as_test(
-        factory,
-        settings=settings(
-            max_examples=EXAMPLES,
-            stateful_step_count=STEPS,
-            deadline=None,
-            database=DirectoryBasedExampleDatabase(f".hypothesis/examples/{shard}"),
-        ),
+    try:
+        run_state_machine_as_test(
+            factory,
+            settings=settings(
+                max_examples=EXAMPLES,
+                stateful_step_count=STEPS,
+                deadline=None,
+                database=DirectoryBasedExampleDatabase(f".hypothesis/examples/{shard}"),
+            ),
+        )
+    finally:
+        report_reach(shard, machines)
+
+
+def report_reach(shard: int, machines: list[StackMachine]) -> None:
+    """Record which rules this shard's sequences fired, for `just property` to sum up."""
+
+    report_dir = os.environ.get("JJ_STACK_PROPERTY_REPORT_DIR")
+    if report_dir is None:
+        return
+    fired = Counter(name for machine in machines for name in machine.fired)
+    Path(report_dir, f"shard-{shard}.json").write_text(
+        json.dumps({"sequences": len(machines), "rules": sorted(RULE_NAMES), "fired": fired})
     )

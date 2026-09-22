@@ -2,18 +2,26 @@
 
 from __future__ import annotations
 
+import functools
 import io
+from collections.abc import Callable
 from contextlib import ExitStack, redirect_stderr, redirect_stdout
 from copy import deepcopy
 from dataclasses import asdict
 from hashlib import sha1
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Literal, get_args
+from typing import Any, Literal, get_args
 
 import pytest
 from hypothesis import strategies as st
-from hypothesis.stateful import RuleBasedStateMachine, initialize, invariant, precondition, rule
+from hypothesis.stateful import (
+    RuleBasedStateMachine,
+    initialize,
+    invariant,
+    precondition,
+    rule as hypothesis_rule,
+)
 
 import jj_stack.cli as cli_module
 import jj_stack.commands.merge.wait as wait_module
@@ -54,6 +62,23 @@ Drift = Literal[
     "trunk_advanced",
 ]
 MergeMethod = Literal["squash", "rebase"]
+RULE_NAMES: set[str] = set()
+
+
+def rule(**strategies: Any) -> Callable[[Callable[..., None]], Callable[..., Any]]:
+    """Hypothesis's rule, also recording which rules an example fired."""
+
+    def decorate(action: Callable[..., None]) -> Callable[..., Any]:
+        RULE_NAMES.add(action.__name__)
+
+        @functools.wraps(action)
+        def recorded(self: StackMachine, *args: object, **kwargs: object) -> None:
+            self.fired.add(action.__name__)
+            action(self, *args, **kwargs)
+
+        return hypothesis_rule(**strategies)(recorded)
+
+    return decorate
 
 
 def subject(label: str) -> str:
@@ -96,6 +121,7 @@ class StackMachine(RuleBasedStateMachine):
         self.contents: dict[str, dict[str, str]] = {}
         self.rebased: set[str] = set()
         self.verified: dict[str, object] = {}
+        self.fired: set[str] = set()
         self.disturbances = 0
         self.pr_count = 0
         self.last_error: CliError | None = None
