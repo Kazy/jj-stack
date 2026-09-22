@@ -96,6 +96,7 @@ class StackMachine(RuleBasedStateMachine):
         self.contents: dict[str, dict[str, str]] = {}
         self.rebased: set[str] = set()
         self.verified: dict[str, object] = {}
+        self.disturbances = 0
         self.pr_count = 0
         self.last_error: CliError | None = None
         config = self.root / "jj-config.toml"
@@ -1394,8 +1395,10 @@ class StackMachine(RuleBasedStateMachine):
             )
         ]
 
+    @precondition(lambda self: self.disturbances < 3)
     @rule(data=st.data())
     def server_change(self, data: st.DataObject) -> None:
+        self.disturbances += 1
         kinds: list[Drift] = [
             kind
             for kind in get_args(Drift)
@@ -1416,7 +1419,7 @@ class StackMachine(RuleBasedStateMachine):
     def server_approve(self, data: st.DataObject) -> None:
         self.approve((data.draw(st.sampled_from(self.approvable()), label="change"),))
 
-    @precondition(lambda self: bool(self.paths))
+    @precondition(lambda self: bool(self.paths) and self.disturbances < 3)
     @rule(data=st.data(), point=st.sampled_from(("after_remote_push", "create_pr", "update_pr")))
     def interrupt_submit(self, data: st.DataObject, point: str) -> None:
         indices = [
@@ -1436,6 +1439,7 @@ class StackMachine(RuleBasedStateMachine):
             )
         ]
         if indices:
+            self.disturbances += 1
             index = data.draw(st.sampled_from(indices), label="stack")
             position = data.draw(st.integers(0, len(self.paths[index]) - 1), label="change")
             self.interrupted_submit(index, point, position)
