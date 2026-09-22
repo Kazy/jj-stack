@@ -88,7 +88,8 @@ need separate forwarding tests.
 `just test` runs the full suite with parallel workers. Arguments replace that default, so
 `just test tests/unit/test_jj_client.py` runs a focused selection serially; add `-n auto` to
 parallelize a selection, or use `just test -n 0` for a serial full run. `just check` also runs
-the full suite in parallel, after linting and type checking.
+the full suite in parallel, after linting and type checking. Generated command sequences run
+only through `just property` and CI's smoke job; see [property-testing.md](property-testing.md).
 
 Measure idle workers with `just check --pytest-concurrency-report`, or use
 `just test -n auto --concurrency-report --durations=20 --randomly-seed=1234` to compare test

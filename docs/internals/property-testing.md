@@ -20,3 +20,16 @@ These constraints supplement the [testing philosophy](testing-philosophy.md):
 - Each independent seeded search (shard) in the property tests has its own Hypothesis example
   database. Sharing a database would spend parallel search time replaying and shrinking the same
   saved failure.
+- The generated search runs through `just property` and CI's smoke job; `just check` runs only
+  the fixed scenarios in `tests/property`. The runner ends by listing the rules the sequences
+  fired and the rules none reached. Treat an unreached rule as a search problem, not as missing
+  coverage: give it a richer starting state or fix its precondition.
+- A rule is eligible only when it has work to do; compute its candidates in a helper that its
+  precondition shares. Hypothesis picks uniformly among eligible rules, so a rule that finds
+  nothing wastes a step and a model check.
+- Server drift and injected faults are capped per sequence, and some sequences start after an
+  external merge of the bottom PR. Each disturbance pushes the state into a stop that later
+  commands only confirm, and every recovery rule needs a merged PR first; without both, a short
+  walk never reaches recovery.
+- `check_contents` skips a change whose commit and expected contents it already verified. A new
+  content check that depends on anything else must extend that key.
