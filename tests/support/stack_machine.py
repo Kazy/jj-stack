@@ -910,7 +910,7 @@ class StackMachine(RuleBasedStateMachine):
         expected = (
             3
             if conflicts & self.submitted.keys()
-            else int(any(self.dependents(label) for label in self.merged(scope)))
+            else int(any(self.dependents(label, excluding=path) for label in self.merged(scope)))
         )
         assert code == expected, (self.last_error, output)
         if self.rebased.intersection(path):
@@ -972,7 +972,7 @@ class StackMachine(RuleBasedStateMachine):
             len(ready) != len(affected)
             or len(finishes) != len(direct)
             or any(
-                self.dependents(label)
+                self.dependents(label, excluding=self.paths[i])
                 for i in ready
                 for label in self.merged(self.recovery_scope(self.paths[i]))
             )
@@ -1080,7 +1080,7 @@ class StackMachine(RuleBasedStateMachine):
             and not self.foreign.intersection(path)
             and not self.sync_blocked(path)
             and not self.sync_conflicts(path)
-            and not any(self.dependents(label) for label in self.merged(path))
+            and not any(self.dependents(label, excluding=path) for label in self.merged(path))
         ]
 
     def interrupted_sync(self, index: int) -> None:
