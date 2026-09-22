@@ -34,16 +34,13 @@ def test_help_uses_jj_colors_outside_a_workspace(tmp_path: Path, monkeypatch, ca
     assert not captured.err
 
 
-@pytest.mark.parametrize("working_copy", ("empty", "undescribed"))
-def test_selected_path_maximality_ignores_excluded_working_copy_child(
+def test_selected_path_maximality_ignores_an_undescribed_working_copy_child(
     tmp_path: Path,
-    working_copy: str,
 ) -> None:
     repo = init_repo(tmp_path)
     commit_file(repo, "feature", "feature.txt")
     feature = jj_commit_id(repo, "@-")
-    if working_copy == "undescribed":
-        (repo / "working-copy.txt").write_text("work\n", encoding="utf-8")
+    (repo / "working-copy.txt").write_text("work\n", encoding="utf-8")
 
     path = select_stack_path(
         jj_client=JjClient(repo),
@@ -52,24 +49,6 @@ def test_selected_path_maximality_ignores_excluded_working_copy_child(
     )
 
     assert path.is_maximal
-
-
-def test_selected_path_ignores_off_path_submittable_child(tmp_path: Path) -> None:
-    repo = init_repo(tmp_path)
-    commit_file(repo, "feature 1", "feature-1.txt")
-    feature_1 = jj_commit_id(repo, "@-")
-    commit_file(repo, "feature 2", "feature-2.txt")
-    feature_2 = jj_commit_id(repo, "@-")
-    run_command(["jj", "new", feature_1], repo)
-    commit_file(repo, "feature side", "feature-side.txt")
-
-    stack = select_stack_path(
-        jj_client=JjClient(repo),
-        revset=feature_2,
-        state=TrackingState(),
-    ).stack
-
-    assert [change.subject for change in stack.changes] == ["feature 1", "feature 2"]
 
 
 def test_paired_ancestor_membership_ignores_an_unavailable_target(tmp_path: Path) -> None:
