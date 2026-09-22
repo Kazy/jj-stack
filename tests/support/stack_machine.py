@@ -1225,16 +1225,17 @@ class StackMachine(RuleBasedStateMachine):
         if labels:
             self.resolve_label(data.draw(st.sampled_from(labels), label="change"))
 
-    @precondition(lambda self: bool(self.editable()))
-    @rule(data=st.data())
-    def rebase(self, data: st.DataObject) -> None:
-        indices = [
+    def trunk_overlapping(self) -> list[int]:
+        return [
             i
             for i in self.editable()
             if any(self.contents[label].keys() & self.trunk.keys() for label in self.paths[i])
         ]
-        if indices:
-            self.rebase_path(data.draw(st.sampled_from(indices), label="stack"))
+
+    @precondition(lambda self: bool(self.trunk_overlapping()))
+    @rule(data=st.data())
+    def rebase(self, data: st.DataObject) -> None:
+        self.rebase_path(data.draw(st.sampled_from(self.trunk_overlapping()), label="stack"))
 
     @precondition(lambda self: any(not self.merged(p) for p in self.paths))
     @rule(data=st.data())
@@ -1300,7 +1301,7 @@ class StackMachine(RuleBasedStateMachine):
     def sync(self, data: st.DataObject) -> None:
         self.sync_path(data.draw(st.sampled_from(self.syncable()), label="stack"))
 
-    @precondition(lambda self: bool(self.submitted))
+    @precondition(lambda self: bool(self.merged(tuple(self.submitted))))
     @rule()
     def sync_all(self) -> None:
         self.sync_all_paths()
@@ -1353,8 +1354,7 @@ class StackMachine(RuleBasedStateMachine):
     def cleanup(self, data: st.DataObject) -> None:
         self.cleanup_label(data.draw(st.sampled_from(self.cleanup_candidates()), label="change"))
 
-    @rule(kind=st.sampled_from(get_args(Drift)), data=st.data())
-    def server_change(self, kind: Drift, data: st.DataObject) -> None:
+    def drift_candidates(self, kind: Drift) -> list[str]:
         refs = self.fake.branch_heads() if kind == "reopened_pr" else {}
         queued_members = {
             number
@@ -1362,7 +1362,7 @@ class StackMachine(RuleBasedStateMachine):
             if any(self.fake.is_queued(number) for number in members)
             for number in members
         }
-        labels = [
+        return [
             label
             for p in self.paths
             if not self.merged(p) and not self.rebased.intersection(p)
@@ -1376,17 +1376,28 @@ class StackMachine(RuleBasedStateMachine):
                 or (self.pr(label).head_ref in refs and self.pr(label).base_ref in refs)
             )
         ]
+
+    @rule(data=st.data())
+    def server_change(self, data: st.DataObject) -> None:
+        kinds: list[Drift] = [
+            kind
+            for kind in get_args(Drift)
+            if kind == "trunk_advanced" or self.drift_candidates(kind)
+        ]
+        kind = data.draw(st.sampled_from(kinds), label="kind")
         if kind == "trunk_advanced":
             self.drift(kind)
-        elif labels:
-            self.drift(kind, data.draw(st.sampled_from(labels), label="change"))
+        else:
+            candidates = self.drift_candidates(kind)
+            self.drift(kind, data.draw(st.sampled_from(candidates), label="change"))
 
-    @precondition(lambda self: bool(self.submitted))
+    def approvable(self) -> tuple[str, ...]:
+        return tuple(label for label in self.submitted if self.pr(label).state == "open")
+
+    @precondition(lambda self: bool(self.approvable()))
     @rule(data=st.data())
     def server_approve(self, data: st.DataObject) -> None:
-        labels = tuple(label for label in self.submitted if self.pr(label).state == "open")
-        if labels:
-            self.approve((data.draw(st.sampled_from(labels), label="change"),))
+        self.approve((data.draw(st.sampled_from(self.approvable()), label="change"),))
 
     @precondition(lambda self: bool(self.paths))
     @rule(data=st.data(), point=st.sampled_from(("after_remote_push", "create_pr", "update_pr")))
@@ -1419,9 +1430,8 @@ class StackMachine(RuleBasedStateMachine):
             data.draw(st.sampled_from(self.interruptible_syncs()), label="stack")
         )
 
-    @rule(data=st.data())
-    def relink(self, data: st.DataObject) -> None:
-        labels = [
+    def relinkable(self) -> list[str]:
+        return [
             label
             for i in self.editable()
             for label in self.paths[i]
@@ -1433,5 +1443,8 @@ class StackMachine(RuleBasedStateMachine):
                 != self.fake.ref_target(pr.head_ref)
             )
         ]
-        if labels:
-            self.relink_label(data.draw(st.sampled_from(labels), label="change"))
+
+    @precondition(lambda self: bool(self.relinkable()))
+    @rule(data=st.data())
+    def relink(self, data: st.DataObject) -> None:
+        self.relink_label(data.draw(st.sampled_from(self.relinkable()), label="change"))

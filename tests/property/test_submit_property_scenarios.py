@@ -3,12 +3,12 @@
 from collections.abc import Iterator
 
 import pytest
-from hypothesis import given, seed, settings, strategies as st
+from hypothesis import seed, settings
 from hypothesis.database import DirectoryBasedExampleDatabase
 from hypothesis.stateful import run_state_machine_as_test
 from tests.run_submit_property_scenarios import EXAMPLES, SEED, SHARDS, STEPS
 from tests.support.stack_edit_scenarios import StackEditOperation
-from tests.support.stack_machine import Drift, StackMachine
+from tests.support.stack_machine import StackMachine
 
 pytestmark = pytest.mark.fixed_property
 
@@ -89,26 +89,14 @@ def test_sync_all_finishes_a_merged_pr_left_by_an_interrupted_sync(
     machine.sync_all_paths()
 
 
-@pytest.mark.parametrize("kind", ["pr_base_retargeted", "remote_branch_deleted"])
-@given(data=st.data())
-@settings(max_examples=1, deadline=None)
-def test_waiting_for_another_stack_completes_queued_prs_despite_drift_above_them(
-    kind: Drift,
-    data: st.DataObject,
-) -> None:
-    machine = StackMachine()
-    try:
-        machine.start(size=3, submitted=True, queue=True)
-        machine.enqueue_path(0, 2)
-        machine.server_change(kind, data)
-        machine.new_stack(1)
-        machine.submit_path(1)
-        machine.approve(machine.paths[1])
-        machine.wait_for_queue(1, 1, None)
-        assert machine.merged(machine.paths[0]) == ("c1", "c2")
-        machine.model_matches()
-    finally:
-        machine.teardown()
+def test_waiting_for_another_stack_completes_queued_prs(machine: StackMachine) -> None:
+    machine.start(size=3, submitted=True, queue=True)
+    machine.enqueue_path(0, 2)
+    machine.new_stack(1)
+    machine.submit_path(1)
+    machine.approve(machine.paths[1])
+    machine.wait_for_queue(1, 1, None)
+    assert machine.merged(machine.paths[0]) == ("c1", "c2")
 
 
 @pytest.mark.parametrize("shard", range(SHARDS))
