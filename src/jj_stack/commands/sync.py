@@ -247,7 +247,9 @@ async def _run_global_plan(
         plan = build_global_convergence_plan(facts=facts)
     for change_id, candidate, reason in plan.blocked:
         pr_label = format_pr_label(candidate.pr_identity.pr_number, repo=facts.pr_facts.repo)
-        console.warning(t"Skipped {pr_label} for {ui.change_id(change_id)}: {reason}.")
+        console.warning(
+            t"Did not sync or clean up {pr_label} for {ui.change_id(change_id)}: {reason}."
+        )
     trunk_branch = None
     if plan.sync_change_ids:
         repo_state = facts.pr_facts.github_repo
