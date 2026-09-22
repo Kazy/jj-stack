@@ -513,7 +513,9 @@ replaying equivalent diffs, only if every remaining local change is still at its
 GitHub rewrote every remaining PR. Otherwise it adopts none, rebases the remaining changes onto
 trunk, records GitHub's reported heads as their baselines, and republishes them. It accepts those
 heads and bases only while a merged PR in the same GitHub stack matches its saved record and its
-merge result is on trunk.
+merge result is on trunk. GitHub roots the rewritten PRs on trunk's tip at the time of the
+rewrite, which may be past the merge result, so the rewritten chain's base must be on trunk at or
+after that merge result rather than exactly at it.
 
 #### Native GitHub stack rebase
 

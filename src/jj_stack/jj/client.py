@@ -683,13 +683,16 @@ class JjClient:
         expected_target: CommitId,
         expected_change_id: ChangeId | None = None,
         expected_chain: Sequence[tuple[str, CommitId, ExpectedGitChangeId]] = (),
-        expected_parent_commit_id: CommitId | None = None,
+        base_descends_from: CommitId | None = None,
+        base_ancestor_of: CommitId | None = None,
     ) -> Iterator[LocalCommit]:
         """Import a PR branch at its expected commit, then remove the temporary ref and bookmark.
 
         An expected chain guards every member's raw Git change ID and single-parent ancestry.
-        The bottom parent is pinned only when expected_parent_commit_id is given. A tuple
-        accepts any listed ID, including a missing change-ID header represented by `None`.
+        The chain's base, the bottom member's parent, must descend from base_descends_from and
+        be an ancestor of base_ancestor_of when those are given: GitHub roots rewritten members
+        on trunk's tip at rewrite time, which may be past the merge result. A tuple accepts any
+        listed ID, including a missing change-ID header represented by `None`.
         """
 
         ref = f"refs/heads/{branch}"
@@ -721,7 +724,7 @@ class JjClient:
                     condition="remote_branch_moved",
                 )
             if chain:
-                expected_parent = expected_parent_commit_id
+                expected_parent: CommitId | None = None
                 for _chain_branch, target, expected_git_change_id in chain:
                     actual = self._read_git_commit_metadata(target)
                     if (
@@ -730,6 +733,14 @@ class JjClient:
                         )
                         or len(actual.parents) != 1
                         or (expected_parent is not None and actual.parents != (expected_parent,))
+                        or (
+                            expected_parent is None
+                            and not self._git_commit_in_range(
+                                actual.parents[0],
+                                after=base_descends_from,
+                                within=base_ancestor_of,
+                            )
+                        )
                     ):
                         raise CliError(
                             "Imported pull request heads no longer form the expected stack."
@@ -750,6 +761,20 @@ class JjClient:
             yield change
         finally:
             self.clear_pr_branch_temp_artifacts()
+
+    def _git_commit_in_range(
+        self, commit_id: CommitId, *, after: CommitId | None, within: CommitId | None
+    ) -> bool:
+        """Whether the commit descends from `after` and is an ancestor of `within`, inclusive."""
+
+        return (after is None or self._git_is_ancestor(after, commit_id)) and (
+            within is None or self._git_is_ancestor(commit_id, within)
+        )
+
+    def _git_is_ancestor(self, ancestor: CommitId, descendant: CommitId) -> bool:
+        # rev-list prints the ancestor itself unless the descendant already reaches it.
+        listed = self._run_git(("rev-list", "-n", "1", ancestor, f"^{descendant}"))
+        return not listed.strip()
 
     def read_remote_git_commit(
         self,

@@ -46,8 +46,8 @@ class OrdinaryConvergencePlan:
 class GithubStackMergePlan:
     actions: ConvergenceActions
     rewritten_changes: tuple[RewrittenPRChange, ...]
-    # The merge-result commit GitHub used as the parent of the remaining changes.
-    expected_parent_commit_id: CommitId
+    # GitHub's reported merge result for the last merged member, when it reported one.
+    merge_result_commit_id: CommitId | None
 
 
 @dataclass(frozen=True, slots=True)

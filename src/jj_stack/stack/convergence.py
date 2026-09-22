@@ -177,10 +177,7 @@ def build_selected_convergence_plan(
         return GithubStackMergePlan(
             actions=actions,
             rewritten_changes=adopted,
-            # Without a reported merge result, the trunk tip is the only commit left to expect;
-            # the import still verifies the chain against it.
-            expected_parent_commit_id=effect.merge_result_commit_id
-            or prepared.stack.trunk.commit_id,
+            merge_result_commit_id=effect.merge_result_commit_id,
         )
     return OrdinaryConvergencePlan(actions=actions)
 

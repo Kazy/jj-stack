@@ -195,7 +195,8 @@ def _apply_local_convergence(
                 )
                 for item in rewritten
             ),
-            expected_parent_commit_id=plan.expected_parent_commit_id,
+            base_descends_from=plan.merge_result_commit_id,
+            base_ancestor_of=trunk_commit_id,
         )
     else:
         replaced = ()
