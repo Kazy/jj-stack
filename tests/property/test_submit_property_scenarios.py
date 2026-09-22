@@ -94,6 +94,16 @@ def test_sync_all_finishes_a_merged_pr_left_by_an_interrupted_sync(
     machine.sync_all_paths()
 
 
+def test_sync_all_does_not_report_the_pr_of_a_stack_it_syncs(machine: StackMachine) -> None:
+    machine.start(size=2, submitted=True, merged=True)
+    # Local and trunk edits to the merged change's file leave the survivor conflicted, so the
+    # first sync saves the head GitHub rewrote for it instead of a commit this repo holds.
+    machine.shared_edit(0, server=False)
+    machine.shared_edit(0, server=True)
+    machine.sync_all_paths()
+    machine.sync_all_paths()
+
+
 def test_waiting_for_another_stack_completes_queued_prs(machine: StackMachine) -> None:
     machine.start(size=3, submitted=True, queue=True)
     machine.enqueue_path(0, 2)

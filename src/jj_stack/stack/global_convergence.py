@@ -157,7 +157,7 @@ def _classify_global_candidate(
         )
     if isinstance(state, PRMissing):
         return state.reason, None, ()
-    if ancestry == "unresolved":
+    if ancestry == "unresolved" and not facts.local_copies[change_id]:
         return "the submitted commit is unavailable locally", None, ()
     if isinstance(state, (PRIdentityMismatch, Closed, Merged)):
         return trunk_evidence_reason(state), None, ()
