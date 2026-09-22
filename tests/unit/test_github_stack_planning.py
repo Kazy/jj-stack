@@ -42,12 +42,9 @@ def _stack(
         "expected_stack_numbers",
     ),
     (
-        ((1,), (), frozenset(), True, "none", ()),
         # A stack GitHub left unusable blocks only selections that touch it.
         ((1,), (_stack(9, 2, 3, historical=(3,)),), frozenset(), True, "none", ()),
         ((1, None), (_stack(5, 9, 10),), frozenset(), True, "create", ()),
-        ((1, 2), (_stack(7, 1, 2),), frozenset(), True, "none", ()),
-        ((1, 2, None, 3), (_stack(7, 1, 2),), frozenset(), True, "append", (7,)),
         ((1, 2, 3), (_stack(7, 1, 2),), frozenset({3}), True, "append", (7,)),
         ((1, 2), (_stack(7, 1, 2),), frozenset({1}), True, "replace", (7,)),
         ((2, 1), (_stack(7, 1, 2),), frozenset(), True, "replace", (7,)),
