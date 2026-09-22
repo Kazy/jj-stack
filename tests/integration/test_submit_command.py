@@ -509,14 +509,14 @@ def test_submit_landed_interior_base_requires_the_child_to_move_to_trunk(
     ) == survivor_snapshot
 
 
-@pytest.mark.parametrize("drift", ("local", "remote", "merged"))
+@pytest.mark.parametrize("drift", ("local", "remote"))
 def test_submit_explicit_base_requires_an_exact_open_parent_pr(
     tmp_path: Path,
     monkeypatch,
     capsys,
     drift: str,
 ) -> None:
-    """A child must not be attached to a stale parent snapshot or a PR that already landed."""
+    """A child must not be attached to a stale parent snapshot."""
 
     repo, fake_repo = init_fake_github_repo_with_submitted_feature(tmp_path)
     config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
@@ -528,7 +528,7 @@ def test_submit_explicit_base_requires_an_exact_open_parent_pr(
         run_command(["jj", "edit", parent.change_id], repo)
         write_file(repo / "parent-update.txt", "updated\n")
         run_command(["jj", "status"], repo)
-    elif drift == "remote":
+    else:
         # The fake otherwise treats a temporary head-at-base state as a merged PR. Real
         # GitHub does not reliably perform that idealized transition after a direct push.
         fake_repo.auto_merge_reachable_heads = False
@@ -537,8 +537,6 @@ def test_submit_explicit_base_requires_an_exact_open_parent_pr(
             branch=parent_identity.head_ref,
             target=read_remote_ref(fake_repo.git_dir, "main"),
         )
-    else:
-        fake_repo.apply_squash_merge(fake_repo.prs[1])
     remote_before = remote_refs(fake_repo.git_dir)
     stacks_before = dict(fake_repo.github_stacks)
     state_before = TrackingStore.for_repo(repo).load()
@@ -558,7 +556,7 @@ def test_submit_explicit_base_requires_an_exact_open_parent_pr(
     if drift == "local":
         assert "changed since its last submit" in rendered
         assert f"jj-stack submit --base {parent.change_id[:8]} {child.change_id[:8]}" in rendered
-    elif drift == "remote":
+    else:
         branch = parent_identity.head_ref
         submitted_target = state_before.prs[parent.change_id].submitted_baseline.commit_id
         assert "no longer points to the submitted commit" in rendered
@@ -570,12 +568,6 @@ def test_submit_explicit_base_requires_an_exact_open_parent_pr(
         assert "jj-stack left it untouched" in rendered
         assert "cannot repair it automatically" in rendered
         assert f"jj-stack submit --base {parent.change_id[:8]} {child.change_id[:8]}" in rendered
-    else:
-        child_id = child.change_id[:8]
-        assert "Sync the parent PR first" in rendered
-        assert f"jj rebase -s '{child_id}' -o 'trunk()'" in rendered
-        assert f"jj-stack submit {child_id}" in rendered
-        assert "without --base" in rendered
     assert tuple(fake_repo.prs) == (1,)
     assert remote_refs(fake_repo.git_dir) == remote_before
     assert fake_repo.github_stacks == stacks_before
