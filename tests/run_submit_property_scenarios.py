@@ -15,10 +15,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-EXAMPLES = int(os.environ.get("JJ_STACK_PROPERTY_EXAMPLES", "1"))
-STEPS = int(os.environ.get("JJ_STACK_PROPERTY_STEPS", "8"))
-SHARDS = int(os.environ.get("JJ_STACK_PROPERTY_SHARDS", "1"))
-SEED = int(os.environ.get("JJ_STACK_PROPERTY_SEED", "8675309"))
+DEFAULT_SEED = 8675309
 
 
 def positive_int(value: str) -> int:
@@ -73,7 +70,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     shards = args.shards if args.shards is not None else 4 * jobs
     chosen_seed = secrets.randbits(32) if args.random_seed else args.seed
     if chosen_seed is None:
-        chosen_seed = SEED
+        chosen_seed = DEFAULT_SEED
     env = {key: value for key, value in os.environ.items() if key != "VIRTUAL_ENV"}
     env.update(
         {

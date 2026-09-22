@@ -10,11 +10,12 @@ import pytest
 from hypothesis import seed, settings
 from hypothesis.database import DirectoryBasedExampleDatabase
 from hypothesis.stateful import run_state_machine_as_test
-from tests.run_submit_property_scenarios import EXAMPLES, SEED, SHARDS, STEPS
 from tests.support.stack_edit_scenarios import StackEditOperation
 from tests.support.stack_machine import RULE_NAMES, StackMachine
 
 pytestmark = pytest.mark.fixed_property
+SEARCH_EXAMPLES = os.environ.get("JJ_STACK_PROPERTY_EXAMPLES")
+SHARDS = int(os.environ.get("JJ_STACK_PROPERTY_SHARDS", "1"))
 
 
 @pytest.fixture
@@ -103,11 +104,14 @@ def test_waiting_for_another_stack_completes_queued_prs(machine: StackMachine) -
     assert machine.merged(machine.paths[0]) == ("c1", "c2")
 
 
+@pytest.mark.skipif(
+    SEARCH_EXAMPLES is None, reason="generated sequences run through `just property`"
+)
 @pytest.mark.parametrize("shard", range(SHARDS))
 def test_generated_commands(shard: int) -> None:
     machines: list[StackMachine] = []
 
-    @seed(SEED + shard)
+    @seed(int(os.environ["JJ_STACK_PROPERTY_SEED"]) + shard)
     def factory() -> StackMachine:
         machines.append(StackMachine())
         return machines[-1]
@@ -116,8 +120,8 @@ def test_generated_commands(shard: int) -> None:
         run_state_machine_as_test(
             factory,
             settings=settings(
-                max_examples=EXAMPLES,
-                stateful_step_count=STEPS,
+                max_examples=int(os.environ["JJ_STACK_PROPERTY_EXAMPLES"]),
+                stateful_step_count=int(os.environ["JJ_STACK_PROPERTY_STEPS"]),
                 deadline=None,
                 database=DirectoryBasedExampleDatabase(f".hypothesis/examples/{shard}"),
             ),
