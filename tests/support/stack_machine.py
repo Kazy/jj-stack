@@ -104,8 +104,15 @@ class StackMachine(RuleBasedStateMachine):
         self.patch.setenv("JJ_USER", "Test User")
         self.patch.setenv("JJ_EMAIL", "test@example.com")
 
-    @initialize(size=st.integers(1, 4), submitted=st.booleans(), queue=st.booleans())
-    def start(self, size: int, submitted: bool, queue: bool = False) -> None:
+    @initialize(
+        size=st.integers(1, 4),
+        submitted=st.booleans(),
+        queue=st.booleans(),
+        merged=st.booleans(),
+    )
+    def start(
+        self, size: int, submitted: bool, queue: bool = False, merged: bool = False
+    ) -> None:
         if submitted:
             self.repo, self.fake = init_fake_github_repo_with_submitted_stack(
                 self.root, size=size
@@ -140,6 +147,9 @@ class StackMachine(RuleBasedStateMachine):
             self.submitted = {label: state.prs[cid] for label, cid in self.ids.items()}
             self.pr_count = size
             self.approve(path)
+            # Every recovery rule needs a merged PR first; let some sequences begin there.
+            if merged and not queue:
+                self.server_merge(0, 1, "squash")
         else:
             self.new_stack(size)
 
