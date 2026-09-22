@@ -8,7 +8,9 @@ import time
 import httpx2
 import pytest
 
+from jj_stack.errors import CliError
 from jj_stack.github.client import GithubClient, GithubClientError
+from jj_stack.github.overview_comments import delete_stack_overview_comment
 from jj_stack.github.resolution import GithubRepoAddress
 from jj_stack.identifiers import CommitId
 from jj_stack.models.github import GithubBranchRef, GithubPR, GithubPRHead
@@ -1091,3 +1093,27 @@ def test_github_client_reports_a_permissions_403_as_access_denied() -> None:
     )
     # Waiting cannot fix a permissions failure, so it must not be retried either.
     assert attempts == 1
+
+
+def _delete_overview_comment(status: int) -> bool:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        assert (request.method, request.url.path) == (
+            "DELETE",
+            "/repos/octo-org/stacked-prs/issues/comments/17",
+        )
+        return httpx2.Response(status, json={"message": "refused"}, request=request)
+
+    async def run() -> bool:
+        async with _github_client(handler) as client:
+            return await delete_stack_overview_comment(comment_id=17, github_client=client)
+
+    return asyncio.run(run())
+
+
+def test_overview_comment_deletion_accepts_a_missing_comment_and_fails_otherwise() -> None:
+    """A comment removed out of band after planning is done; other refusals stop the caller."""
+
+    assert _delete_overview_comment(204) is True
+    assert _delete_overview_comment(404) is False
+    with pytest.raises(CliError, match="Could not delete stack overview comment #17"):
+        _delete_overview_comment(403)
