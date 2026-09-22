@@ -119,13 +119,11 @@ def build_global_convergence_plan(*, facts: GlobalSyncFacts) -> GlobalConvergenc
     blocked: list[tuple[ChangeId, TrackedPR, Message]] = []
     finishes: list[OnTrunkChange] = []
     heads: list[ChangeId] = []
-    tracked_prs = frozenset(tracked.pr_identity.pr_number for tracked in state.prs.values())
     for change_id, candidate in sorted(state.prs.items()):
         reason, finish, candidate_heads = _classify_global_candidate(
             change_id=change_id,
             candidate=candidate,
             facts=facts,
-            tracked_pr_numbers=tracked_prs,
         )
         heads.extend(candidate_heads)
         if reason is not None:
@@ -144,7 +142,6 @@ def _classify_global_candidate(
     change_id: ChangeId,
     candidate: TrackedPR,
     facts: GlobalSyncFacts,
-    tracked_pr_numbers: frozenset[int],
 ) -> tuple[Message | None, OnTrunkChange | None, tuple[ChangeId, ...]]:
     ancestry = facts.ancestries[candidate.submitted_baseline.commit_id]
     state = classify(facts.pr_facts.prs[change_id], ancestries=facts.ancestries)
@@ -157,7 +154,6 @@ def _classify_global_candidate(
             facts=facts,
             heads=heads,
             state=state,
-            tracked_prs=tracked_pr_numbers,
         )
     if isinstance(state, PRMissing):
         return state.reason, None, ()
@@ -174,7 +170,6 @@ def _affected_candidate_plan(
     facts: GlobalSyncFacts,
     heads: tuple[ChangeId, ...] | None,
     state: TrackedPRState,
-    tracked_prs: frozenset[int],
 ) -> tuple[Message | None, OnTrunkChange | None, tuple[ChangeId, ...]]:
     if heads is None:
         return "local history is not a supported stack", None, ()
@@ -184,13 +179,26 @@ def _affected_candidate_plan(
         return state.reason, None, ()
     if not isinstance(state, Landed):
         return trunk_evidence_reason(state), None, ()
-    stack_reason, historical = _detached_stack_blocker(
-        candidate=candidate,
-        facts=facts,
-        tracked_pr_numbers=tracked_prs,
+    stack_reason, historical, dependents = _detached_stack_members(
+        candidate=candidate, facts=facts
     )
     if stack_reason is not None:
         return stack_reason, None, ()
+    dependent_heads: list[ChangeId] = []
+    for dependent in dependents:
+        dependent_path_heads = _candidate_path_heads(dependent, facts=facts)
+        if dependent_path_heads is None:
+            return (
+                "the open PRs in its GitHub stack are linked to local history that is not a "
+                "supported stack",
+                None,
+                (),
+            )
+        dependent_heads.extend(dependent_path_heads)
+    if dependent_heads:
+        # Syncing the stack that still holds the open PRs reads this merged PR through its saved
+        # link and cleans the link up itself.
+        return None, None, tuple(dependent_heads)
     finished = state.evidence == "rewritten" or historical or state.pr.state != "open"
     finish = OnTrunkChange(
         change_id=state.change_id,
@@ -216,31 +224,26 @@ def _candidate_path_heads(
     return heads or None
 
 
-def _detached_stack_blocker(
+def _detached_stack_members(
     *,
     candidate: TrackedPR,
     facts: GlobalSyncFacts,
-    tracked_pr_numbers: frozenset[int],
-) -> tuple[Message | None, bool]:
+) -> tuple[Message | None, bool, tuple[ChangeId, ...]]:
+    """Read a merged PR's GitHub stack: a blocking reason, whether GitHub lists the PR as merged
+    history, and the tracked changes whose PRs are still active in that stack."""
+
     number = candidate.pr_identity.pr_number
-    matching = tuple(
-        member for stack in facts.stacks for member in stack.prs if member.number == number
-    )
-    if not matching:
-        return None, False
+    stacks = tuple(stack for stack in facts.stacks if number in stack.pr_numbers)
+    if not stacks:
+        return None, False, ()
     pr_label = format_pr_label(number, repo=facts.pr_facts.repo)
-    if not matching[0].is_historical:
-        return t"GitHub still lists {pr_label} among the unmerged PRs in its stack", False
-    blocked = any(
-        number in stack.pr_numbers
-        and not set(stack.active_pr_numbers).isdisjoint(tracked_pr_numbers)
-        for stack in facts.stacks
+    member = next(member for member in stacks[0].prs if member.number == number)
+    if not member.is_historical:
+        return t"GitHub still lists {pr_label} among the unmerged PRs in its stack", False, ()
+    active = {pr_number for stack in stacks for pr_number in stack.active_pr_numbers}
+    dependents = tuple(
+        change_id
+        for change_id, tracked in sorted(facts.state.prs.items())
+        if tracked.pr_identity.pr_number in active
     )
-    return (
-        (
-            t"{pr_label} is in a GitHub stack with unmerged PRs still linked to local changes"
-            if blocked
-            else None
-        ),
-        True,
-    )
+    return None, True, dependents

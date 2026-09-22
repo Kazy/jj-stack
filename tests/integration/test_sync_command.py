@@ -382,6 +382,44 @@ def test_sync_keeps_tracking_and_names_the_recovery_when_a_merged_pr_head_change
     assert submitted.change_id not in state_store.load().prs
 
 
+def test_sync_all_finishes_a_merged_pr_by_syncing_the_stack_of_its_open_prs(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    repo, fake_repo = init_fake_github_repo_with_submitted_stack(tmp_path, size=2)
+    config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
+    state_store = TrackingStore.for_repo(repo)
+    on_trunk, survivor = selected_stack(repo).changes
+    _simulate_stack_partial_merge(fake_repo)
+    # The first sync converges the survivor, then a GitHub error stops it before cleanup, so the
+    # merged PR keeps its saved link while its local copy is already gone.
+    load_comments = GithubClient.find_issue_comments_and_revisions
+    fail_comments = True
+
+    async def load_comments_or_fail(self, **kwargs):
+        if fail_comments:
+            raise GithubClientError("Comment lookup unavailable", status_code=503)
+        return await load_comments(self, **kwargs)
+
+    monkeypatch.setattr(GithubClient, "find_issue_comments_and_revisions", load_comments_or_fail)
+    assert run_main(repo, config_path, "sync", survivor.change_id) == EXIT_GITHUB
+    capsys.readouterr()
+    jj = JjClient(repo)
+    assert on_trunk.change_id in state_store.load().prs
+    assert jj.query_commits_by_change_ids((on_trunk.change_id,))[on_trunk.change_id] == ()
+    fail_comments = False
+
+    exit_code = run_main(repo, config_path, "sync", "--all")
+    captured = capsys.readouterr()
+
+    assert exit_code == 0, (captured.out, captured.err)
+    assert "Skipped" not in captured.out + captured.err
+    assert f"Syncing local stack {survivor.change_id[:8]}" in captured.out
+    assert on_trunk.change_id not in state_store.load().prs
+    assert jj.resolve_commit(survivor.change_id).parents == (fake_repo.prs[1].merge_commit_sha,)
+
+
 def test_sync_all_reports_batch_pr_failure_without_traceback(
     tmp_path: Path,
     monkeypatch,
