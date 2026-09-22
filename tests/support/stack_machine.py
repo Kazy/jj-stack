@@ -95,6 +95,7 @@ class StackMachine(RuleBasedStateMachine):
         self.conflicts: set[str] = set()
         self.contents: dict[str, dict[str, str]] = {}
         self.rebased: set[str] = set()
+        self.verified: dict[str, object] = {}
         self.pr_count = 0
         self.last_error: CliError | None = None
         config = self.root / "jj-config.toml"
@@ -1149,6 +1150,11 @@ class StackMachine(RuleBasedStateMachine):
         }
 
     def check_contents(self, label: str, commit: str, *, conflict: bool) -> None:
+        # A commit's contents never change, so one already checked against the same
+        # expectation needs no second look.
+        expected = (commit, conflict, tuple(sorted(self.contents[label].items())))
+        if self.verified.get(label) == expected:
+            return
         lines = self.jj._run_jj(("diff", "--summary", "-r", commit)).splitlines()
         assert {line[2:] for line in lines} == self.contents[label].keys(), (label, lines)
         unresolved = (
@@ -1162,6 +1168,7 @@ class StackMachine(RuleBasedStateMachine):
         for name, text in self.contents[label].items():
             actual = self.jj._run_jj(("file", "show", "-r", commit, name))
             assert text in actual if name in unresolved else text == actual, (label, name, actual)
+        self.verified[label] = expected
 
     @invariant()
     def model_matches(self) -> None:
