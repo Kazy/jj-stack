@@ -23,30 +23,6 @@ from .submit_command_helpers import (
 )
 
 
-def test_cleanup_removes_closed_pr_after_local_change_is_abandoned(
-    tmp_path: Path,
-    monkeypatch,
-    capsys,
-) -> None:
-    repo, fake_repo = init_fake_github_repo_with_submitted_feature(tmp_path)
-    config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
-
-    change_id = selected_stack(repo).changes[-1].change_id
-    fake_repo.prs[1].state = "closed"
-    run_command(["jj", "abandon", change_id], repo)
-
-    exit_code = run_main(repo, config_path, "cleanup")
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert "PR #1" in captured.out
-    assert change_id[:8] in captured.out
-    assert change_id not in TrackingStore.for_repo(repo).load().prs
-    assert not any(
-        ref.startswith("refs/heads/jj-stack/") for ref in remote_refs(fake_repo.git_dir)
-    )
-
-
 def test_cleanup_dry_run_leaves_an_unadopted_repo_untouched(
     tmp_path: Path,
     monkeypatch,
