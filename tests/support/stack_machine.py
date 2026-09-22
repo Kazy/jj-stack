@@ -644,7 +644,9 @@ class StackMachine(RuleBasedStateMachine):
         else:
             pr.is_draft = not pr.is_draft
 
-    def server_merge(self, index: int, count: int, method: MergeMethod) -> None:
+    def server_merge(
+        self, index: int, count: int, method: MergeMethod, *, rewrite: bool = True
+    ) -> None:
         labels = self.published(self.paths[index])[:count]
         pr = self.pr(labels[-1])
         head = self.fake.ref_target(pr.head_ref)
@@ -657,7 +659,7 @@ class StackMachine(RuleBasedStateMachine):
             pr_number=pr.number,
             uuid="external",
         )
-        _complete_stack_merge(self.fake, operation)
+        _complete_stack_merge(self.fake, operation, rewrite_survivors=rewrite)
         assert operation.status == "merged"
         assert self.store.load() == before
         self.land(labels)
@@ -1223,8 +1225,15 @@ class StackMachine(RuleBasedStateMachine):
         self.move_between(source, target, position, anchor, before)
 
     @precondition(lambda self: bool(self.ready()))
-    @rule(data=st.data(), method=st.sampled_from(get_args(MergeMethod)), external=st.booleans())
-    def merge(self, data: st.DataObject, method: MergeMethod, external: bool) -> None:
+    @rule(
+        data=st.data(),
+        method=st.sampled_from(get_args(MergeMethod)),
+        external=st.booleans(),
+        rewrite=st.booleans(),
+    )
+    def merge(
+        self, data: st.DataObject, method: MergeMethod, external: bool, rewrite: bool
+    ) -> None:
         index = data.draw(st.sampled_from(self.ready()), label="stack")
         count = data.draw(st.integers(1, len(self.published(self.paths[index]))), label="prefix")
         if self.fake.merge_queue_enabled:
@@ -1234,7 +1243,7 @@ class StackMachine(RuleBasedStateMachine):
             else:
                 self.enqueue_path(index, count)
         elif external:
-            self.server_merge(index, count, method)
+            self.server_merge(index, count, method, rewrite=rewrite)
         else:
             self.merge_path(index, count, method)
 
@@ -1278,6 +1287,15 @@ class StackMachine(RuleBasedStateMachine):
     @rule(data=st.data())
     def server_rebase(self, data: st.DataObject) -> None:
         self.rebase_on_server(data.draw(st.sampled_from(self.rebasable()), label="stack"))
+
+    @precondition(lambda self: bool(self.fake.pending_survivor_rewrites))
+    @rule(advanced=st.booleans())
+    def server_rewrite(self, advanced: bool) -> None:
+        # GitHub finishes the rewrite after other merges may have landed, so the survivors are
+        # often rooted past their stack's merge result.
+        if advanced:
+            self.drift("trunk_advanced")
+        self.fake.rewrite_pending_survivors()
 
     def cleanup_candidates(self) -> tuple[str, ...]:
         live = {label for path in self.paths for label in path}

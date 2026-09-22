@@ -70,6 +70,16 @@ def test_partial_rebase_merge_preserves_surviving_ids_and_reviews(machine: Stack
     machine.sync_path(0)
 
 
+def test_sync_adopts_survivors_github_rewrote_after_trunk_advanced(
+    machine: StackMachine,
+) -> None:
+    machine.start(size=3, submitted=True)
+    machine.server_merge(0, 1, "squash", rewrite=False)
+    machine.drift("trunk_advanced")
+    assert machine.fake.rewrite_pending_survivors()
+    machine.sync_path(0)
+
+
 @pytest.mark.parametrize("kind", ["pr_base_retargeted", "remote_branch_deleted"])
 @given(data=st.data())
 @settings(max_examples=1, deadline=None)

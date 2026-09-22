@@ -297,6 +297,12 @@ class FakeGithubRepo:
     next_pr_review_id: int = 1
     issue_comments: dict[int, list[FakeGithubIssueComment]] = field(default_factory=dict)
     github_stacks: dict[int, tuple[int, ...]] = field(default_factory=dict)
+    # Survivor rewrites a stack merge left for later. GitHub finishes them asynchronously,
+    # rooted on the default branch's tip at that time, so trunk may advance first (measured
+    # 2026-09-22). Each entry is the merged base branch and the survivors with their heads.
+    pending_survivor_rewrites: list[tuple[str, tuple[tuple[int, str], ...]]] = field(
+        default_factory=list
+    )
     pr_events: list[FakeGithubPREvent] = field(default_factory=list)
     pr_force_pushes: dict[int, list[tuple[str, str]]] = field(default_factory=dict)
     prs: dict[int, FakeGithubPR] = field(default_factory=dict)
@@ -785,6 +791,27 @@ class FakeGithubRepo:
         )
         self._run_backing_git("update-ref", f"refs/heads/{branch}", commit)
         return commit
+
+    def rewrite_pending_survivors(self) -> tuple[int, ...]:
+        """Finish the survivor rewrites a stack merge left pending, as GitHub does later.
+
+        The bottom survivor is rebased onto the base branch's current tip and each one above it
+        onto the survivor below. A survivor whose branch moved or closed since the merge stops
+        its chain; what GitHub does then is unmeasured.
+        """
+
+        rewritten: list[int] = []
+        for base_ref, survivors in self.pending_survivor_rewrites:
+            previous_base = base_ref
+            for number, head in survivors:
+                pr = self.prs[number]
+                if pr.state != "open" or self.ref_target(pr.head_ref) != head:
+                    break
+                self.rewrite_pr_onto_base(pr, base_ref=previous_base)
+                rewritten.append(number)
+                previous_base = pr.head_ref
+        self.pending_survivor_rewrites.clear()
+        return tuple(rewritten)
 
     def rebase_stack_onto_base(self, stack_number: int, *, base_ref: str) -> tuple[str, ...]:
         """Model GitHub's native stack rebase, which drops jj change-ID headers."""
@@ -1717,6 +1744,8 @@ def _stack_merge_payload(
 def _complete_stack_merge(
     repo: FakeGithubRepo,
     operation: FakeStackMergeOperation,
+    *,
+    rewrite_survivors: bool = True,
 ) -> None:
     stack_number = repo.stack_number_for_pr(operation.pr_number)
     if stack_number is None:
@@ -1764,14 +1793,22 @@ def _complete_stack_merge(
                 pr,
                 merge_method=operation.merge_method,
             )
-    previous_base = base_ref
-    for pr_number in remaining_pr_numbers:
-        pr = repo.prs[pr_number]
-        repo.rewrite_pr_onto_base(
-            pr,
-            base_ref=previous_base,
+    if rewrite_survivors:
+        previous_base = base_ref
+        for pr_number in remaining_pr_numbers:
+            pr = repo.prs[pr_number]
+            repo.rewrite_pr_onto_base(
+                pr,
+                base_ref=previous_base,
+            )
+            previous_base = pr.head_ref
+    elif remaining_pr_numbers:
+        survivors = tuple(
+            (number, head)
+            for number in remaining_pr_numbers
+            if (head := repo.ref_target(repo.prs[number].head_ref)) is not None
         )
-        previous_base = pr.head_ref
+        repo.pending_survivor_rewrites.append((base_ref, survivors))
     operation.final_sha = repo.ref_target(base_ref)
     operation.status = "merged"
 

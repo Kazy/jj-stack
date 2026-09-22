@@ -6,6 +6,10 @@ These constraints supplement the [testing philosophy](testing-philosophy.md):
   leave room for local edits before sync; an interrupted submit must leave room for edits or
   remote changes before retry. Combining these actions would hide the inconsistent states the
   harness exists to test.
+- An external stack merge may leave the survivors' rewrite pending, and `server_rewrite`
+  completes it later, rooted on trunk's tip at that time as GitHub does, optionally after
+  advancing trunk itself. Keep the merge and the rewrite separate actions so local work and
+  other server events can happen between them.
 - Shared-file edits use single-line replacements, and generated moves preserve the relative order
   of changes that edit the same file. These restrictions let the harness predict conflicts without
   implementing `jj`'s merge algorithm; broadening the edits requires revisiting that assumption.
