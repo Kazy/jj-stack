@@ -908,17 +908,21 @@ class StackMachine(RuleBasedStateMachine):
     def sync_all_paths(self) -> None:
         live = {label for path in self.paths for label in path}
         orphans = self.merged(tuple(set(self.submitted) - live))
-        finishes = tuple(
-            label
-            for label in orphans
-            if not any(
-                self.pr(label).number in members
-                and any(self.fake.prs[number].merged_at is None for number in members)
-                for members in self.fake.github_stacks.values()
-            )
-            and not self.dependents(label)
-        )
-        affected = [i for i, p in enumerate(self.paths) if self.merged(p) and not self.queued(p)]
+        # A merged PR with no local copy is cleaned up by syncing the live path whose open PRs
+        # share its GitHub stack; the rest are finished directly unless another PR depends on
+        # them.
+        via_path = {
+            label: i
+            for i, path in enumerate(self.paths)
+            for label in self.recovery_scope(path)[len(path) :]
+        }
+        direct = tuple(label for label in orphans if label not in via_path)
+        finishes = tuple(label for label in direct if not self.dependents(label))
+        affected = [
+            i
+            for i, p in enumerate(self.paths)
+            if (self.merged(p) or i in via_path.values()) and not self.queued(p)
+        ]
         ready = [i for i in affected if not self.sync_blocked(self.paths[i])]
         conflicts = {i: self.sync_conflicts(self.paths[i]) for i in ready}
         selected = (
@@ -928,8 +932,12 @@ class StackMachine(RuleBasedStateMachine):
         untouched = tuple(self.ids[label] for label in live if label not in selected)
         blocked = (
             len(ready) != len(affected)
-            or len(finishes) != len(orphans)
-            or any(self.dependents(label) for i in ready for label in self.merged(self.paths[i]))
+            or len(finishes) != len(direct)
+            or any(
+                self.dependents(label)
+                for i in ready
+                for label in self.merged(self.recovery_scope(self.paths[i]))
+            )
             or any(
                 self.pr(label).state == "closed" and self.pr(label).merged_at is None
                 for label in self.submitted
@@ -979,13 +987,13 @@ class StackMachine(RuleBasedStateMachine):
         self.accept_merge(index, count)
         assert self.outside(scope, advancing=advancing) == outside
 
-    def accept_merge(self, index: int, count: int) -> None:
+    def accept_merge(self, index: int, count: int, *, cleaned: bool = True) -> None:
         path = self.paths[index]
         refs = remote_refs(self.fake.git_dir)
         for label in (*path[:count], *self.recovery_scope(path)[len(path) :]):
             pr = self.pr(label)
             assert pr.merged_at is not None
-            retained = self.dependents(label)
+            retained = self.dependents(label) or not cleaned
             assert refs.get(f"refs/heads/{pr.head_ref}") == (
                 self.submitted[label].submitted_baseline.commit_id if retained else None
             )
@@ -1021,6 +1029,36 @@ class StackMachine(RuleBasedStateMachine):
         output = self.ok("cleanup", self.ids[self.paths[index][-1]])
         assert "sync" in output
         assert self.snapshot() == before
+
+    def interruptible_syncs(self) -> list[int]:
+        """Paths whose sync would succeed and clean up merged PRs nothing else depends on."""
+
+        return [
+            i
+            for i, path in enumerate(self.paths)
+            if self.merged(path)
+            and not self.queued(path)
+            and not self.rebased.intersection(path)
+            and not self.foreign.intersection(path)
+            and not self.sync_blocked(path)
+            and not self.sync_conflicts(path)
+            and not any(self.dependents(label) for label in self.merged(path))
+        ]
+
+    def interrupted_sync(self, index: int) -> None:
+        """Sync a partially merged stack and fail after publication, before cleanup."""
+
+        path = self.paths[index]
+        scope = self.recovery_scope(path)
+        outside = self.outside(scope)
+        with pytest.MonkeyPatch.context() as patch:
+            install_submit_fault(patch, self.fake, "cleanup", "")
+            code, output = self.cli("sync", self.ids[path[-1]])
+            assert code != 0, output
+        # The local stack and the surviving PRs are updated; the merged PRs keep their saved
+        # links and branches until a later sync or cleanup removes them.
+        self.accept_merge(index, len(self.merged(path)), cleaned=False)
+        assert self.outside(scope) == outside
 
     def interrupted_submit(self, index: int, point: str, position: int) -> None:
         path = self.paths[index]
@@ -1247,19 +1285,20 @@ class StackMachine(RuleBasedStateMachine):
         else:
             self.merge_path(index, count, method)
 
-    @precondition(
-        lambda self: (
-            bool(self.rebased) or any(self.merged(p) or self.queued(p) for p in self.paths)
-        )
-    )
-    @rule(data=st.data())
-    def sync(self, data: st.DataObject) -> None:
-        indices = [
+    def syncable(self) -> list[int]:
+        return [
             i
             for i, p in enumerate(self.paths)
-            if self.merged(p) or self.queued(p) or self.rebased.intersection(p)
+            if self.merged(p)
+            or self.queued(p)
+            or self.rebased.intersection(p)
+            or self.recovery_scope(p)[len(p) :]
         ]
-        self.sync_path(data.draw(st.sampled_from(indices), label="stack"))
+
+    @precondition(lambda self: bool(self.syncable()))
+    @rule(data=st.data())
+    def sync(self, data: st.DataObject) -> None:
+        self.sync_path(data.draw(st.sampled_from(self.syncable()), label="stack"))
 
     @precondition(lambda self: bool(self.submitted))
     @rule()
@@ -1372,6 +1411,13 @@ class StackMachine(RuleBasedStateMachine):
             index = data.draw(st.sampled_from(indices), label="stack")
             position = data.draw(st.integers(0, len(self.paths[index]) - 1), label="change")
             self.interrupted_submit(index, point, position)
+
+    @precondition(lambda self: bool(self.interruptible_syncs()))
+    @rule(data=st.data())
+    def interrupt_sync(self, data: st.DataObject) -> None:
+        self.interrupted_sync(
+            data.draw(st.sampled_from(self.interruptible_syncs()), label="stack")
+        )
 
     @rule(data=st.data())
     def relink(self, data: st.DataObject) -> None:

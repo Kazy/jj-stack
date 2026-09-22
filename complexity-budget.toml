@@ -12,7 +12,7 @@ c901 = 16
 governed_c901 = 0
 
 [pytest]
-fixed_property = 10
+fixed_property = 11
 merge_recovery = 67
 
 [labels]

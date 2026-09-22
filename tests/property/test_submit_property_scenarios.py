@@ -80,6 +80,15 @@ def test_sync_adopts_survivors_github_rewrote_after_trunk_advanced(
     machine.sync_path(0)
 
 
+def test_sync_all_finishes_a_merged_pr_left_by_an_interrupted_sync(
+    machine: StackMachine,
+) -> None:
+    machine.start(size=2, submitted=True)
+    machine.server_merge(0, 1, "squash")
+    machine.interrupted_sync(0)
+    machine.sync_all_paths()
+
+
 @pytest.mark.parametrize("kind", ["pr_base_retargeted", "remote_branch_deleted"])
 @given(data=st.data())
 @settings(max_examples=1, deadline=None)

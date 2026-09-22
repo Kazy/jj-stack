@@ -1,4 +1,4 @@
-"""Failures after a real external effect, for generated submit recovery tests."""
+"""Failures after a real external effect, for generated submit and sync recovery tests."""
 
 import pytest
 
@@ -60,6 +60,17 @@ def install_submit_fault(
                 failed = True
                 raise GithubClientError("Simulated pull request update failure", status_code=500)
             return pr
+
+        async def find_issue_comments_by_body_marker(self, *, body_marker, pr_numbers):
+            # Sync reads stack overview comments only while cleaning up merged PRs, after it has
+            # rewritten the local stack and updated the surviving PRs.
+            nonlocal failed
+            if not failed and point == "cleanup":
+                failed = True
+                raise GithubClientError("Simulated comment lookup failure", status_code=503)
+            return await super().find_issue_comments_by_body_marker(
+                body_marker=body_marker, pr_numbers=pr_numbers
+            )
 
     patch_github_client_builders(
         monkeypatch,
