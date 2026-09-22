@@ -65,6 +65,7 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 branch = true
+patch = ["subprocess"]
 source = ["jj_stack"]
 
 [tool.coverage.report]
