@@ -95,7 +95,12 @@ def preserve_external_pr_text(
     submitted_commits: dict[ChangeId, LocalCommit],
     template: str,
 ) -> dict[ChangeId, GeneratedDescription]:
-    """Preserve a live PR pair unless its text still matches the submitted description."""
+    """Preserve a live PR pair once its text no longer matches the submitted description.
+
+    A saved baseline can name a commit this repo never held: `sync` records the head GitHub
+    rewrote for a survivor it could not update, and `relink --replace-remote` records the remote
+    commit. That is not evidence of an edit on GitHub, so the pair still follows the change.
+    """
 
     preserved: dict[ChangeId, GeneratedDescription] = {}
     for change_id, description in descriptions.items():
@@ -106,11 +111,10 @@ def preserve_external_pr_text(
             continue
 
         live_body = pr.body or ""
-        follows_submitted_description = submitted is not None and (
-            pr.title == submitted.subject
-            and live_body == default_pr_body(submitted.description, template=template)
+        preserve_existing = submitted is not None and (
+            pr.title != submitted.subject
+            or live_body != default_pr_body(submitted.description, template=template)
         )
-        preserve_existing = not follows_submitted_description
         preserved[change_id] = replace(
             description,
             body=(

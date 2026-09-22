@@ -119,3 +119,24 @@ def test_refresh_check_compares_the_body_submit_wrote_not_the_raw_description() 
     assert preserved[ChangeId("ch3")] == GeneratedDescription(
         body=wrapped_body, title="feature 3"
     )
+
+
+def test_a_submitted_commit_the_repo_never_held_is_not_an_edit_on_github() -> None:
+    """`sync` saves the head GitHub rewrote for a survivor it could not update.
+
+    That baseline never reaches local history, so submit cannot rebuild the text it wrote last
+    time. Preserving the pair would freeze it for the rest of the pull request's life.
+    """
+
+    preserved = preserve_external_pr_text(
+        descriptions={
+            ChangeId("ch1"): GeneratedDescription(body="edited body", title="feature 1")
+        },
+        prs={ChangeId("ch1"): _live_pr(body="feature 1", title="feature 1")},
+        submitted_commits={},
+        template="",
+    )
+
+    assert preserved[ChangeId("ch1")] == GeneratedDescription(
+        body="edited body", title="feature 1"
+    )

@@ -572,8 +572,9 @@ they do not block the mutation because they are no longer active.
 ### Derived artifacts
 
 A subsequent submit refreshes a PR description only if it still matches the last automated PR
-description. Otherwise it is preserved; explicitly supplied text still takes effect. See
-[pull request descriptions](../reference/descriptions.md).
+description. Otherwise it is preserved; explicitly supplied text still takes effect. A saved
+baseline this repo never held leaves nothing to compare, so the description follows the change.
+See [pull request descriptions](../reference/descriptions.md).
 
 When a submit supplies no stack overview, the existing overview text is preserved and moves to
 the current head PR if the stack grows. An explicitly supplied overview replaces it. A lone PR has
