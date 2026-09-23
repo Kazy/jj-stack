@@ -25,6 +25,7 @@ from hypothesis.stateful import (
 
 import jj_stack.cli as cli_module
 import jj_stack.commands.merge.wait as wait_module
+from jj_stack.commands.submit.default_pr_text import default_pr_body
 from jj_stack.errors import CliError, DriftError, UnsupportedStackError
 from jj_stack.identifiers import ChangeId
 from jj_stack.jj.client import JjClient
@@ -497,7 +498,9 @@ class StackMachine(RuleBasedStateMachine):
             pr = self.pr(label)
             assert pr.state == "open" and pr.merged_at is None
             assert pr.head_ref == record.pr_identity.head_ref and pr.base_ref == base
+            # Nothing in a sequence edits PR text on GitHub, so it always follows the change.
             assert pr.title == change.subject
+            assert pr.body == default_pr_body(change.description, template="")
             assert refs[f"refs/heads/{pr.head_ref}"] == change.commit_id
             assert record.submitted_baseline.commit_id == change.commit_id
             base = pr.head_ref
@@ -538,6 +541,11 @@ class StackMachine(RuleBasedStateMachine):
                 label,
                 filename(label),
                 self.contents[label][filename(label)].rstrip() + " rewritten\n",
+            )
+            description = self.jj.resolve_commit(self.ids[label]).description.rstrip()
+            run_command(
+                ["jj", "describe", "-r", rev, "-m", f"{description}\n\nrewritten\n"],
+                self.repo,
             )
         else:
             previous = path[path.index(label) - 1]
