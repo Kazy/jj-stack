@@ -588,9 +588,11 @@ async def _observe_submit(
         )
     prepared_changes = prepare_submit_changes(
         branch_resolutions=branch_resolutions,
+        github_stacks=observed_stacks,
         lookups=lookups,
         remote_targets=remote_targets,
         stack=stack,
+        tracked_prs=state.prs,
     )
     bottom_base_branch = trunk_branch
     if explicit_base is not None:

@@ -32,7 +32,7 @@ from jj_stack.stack.convergence_models import (
     SelectedConvergencePlan,
 )
 from jj_stack.stack.divergence import divergence_recovery_hint
-from jj_stack.stack.github_stack_safety import selected_github_stack
+from jj_stack.stack.github_stack_safety import github_rewrote_stack, selected_github_stack
 from jj_stack.stack.pr_facts import RepoFacts
 from jj_stack.stack.preparation import PreparedLocalStack
 from jj_stack.stack.trunk_evidence import CommitAncestry
@@ -322,7 +322,7 @@ def _classify_github_stack(
             t"the GitHub stack with {ui.cmd(f'jj-stack unstack --stack {stack.number}')} and "
             t"resubmit.",
         )
-    merge_mode = _is_stack_merge(stack=stack, by_pr=by_pr, head=head)
+    merge_mode = bool(stack.historical_prs)
     history: list[OnTrunkChange] = []
     adopted: list[RewrittenPRChange] = []
     expected_base = trunk_branch
@@ -377,11 +377,14 @@ def _classify_github_stack(
         adopted.append(RewrittenPRChange(change_id, candidate, local, pr))
         expected_base = candidate.pr_identity.head_ref
     result = tuple(adopted)
+    unmoved = {
+        item.pr.number
+        for item in result
+        if item.pr.head.sha == item.candidate.submitted_baseline.commit_id
+    }
+    if not github_rewrote_stack(stack, tracked=by_pr, unmoved=unmoved):
+        raise _unmatched_rewrite_error(stack, head=head)
     if not merge_mode:
-        if any(
-            item.pr.head.sha == item.candidate.submitted_baseline.commit_id for item in result
-        ):
-            raise _unmatched_rewrite_error(stack, head=head)
         return _GithubStackRebase(result)
     return _GithubStackMerge(tuple(history), result, merge_result)
 
@@ -443,13 +446,6 @@ def _trunk_evidence_hint(state: WithPR, *, rerun: str) -> ui.Message:
         t"{ui.cmd('jj-stack cleanup')}; if not, run "
         t"{ui.cmd(f'jj-stack unstack --local {short}')} and submit again."
     )
-
-
-def _is_stack_merge(*, stack: GithubStack, by_pr: dict[int, ChangeId], head: str) -> bool:
-    merge_mode = any(member.number in by_pr for member in stack.historical_prs)
-    if stack.historical_prs and not merge_mode:
-        raise _unmatched_rewrite_error(stack, head=head)
-    return merge_mode
 
 
 def _validate_active_member(

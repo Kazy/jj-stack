@@ -2113,6 +2113,56 @@ def test_submit_fails_closed_when_github_reports_multiple_prs(
     assert set(fake_repo.prs) == {1, 2}
 
 
+@pytest.mark.parametrize("drift", ("partial_merge", "teammate_push"))
+def test_submit_sends_github_stack_rewrites_to_sync_in_one_error(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+    drift: str,
+) -> None:
+    """PRs GitHub moved need one sync; pushes by someone else keep each PR's own repair."""
+
+    repo, fake_repo = init_fake_github_repo_with_submitted_stack(tmp_path, size=3)
+    config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
+    changes = selected_stack(repo).changes
+    head = changes[-1].change_id
+    fake_repo.github_stacks = {7: (1, 2, 3)}
+    if drift == "partial_merge":
+        fake_repo.apply_squash_merge(fake_repo.prs[1])
+        fake_repo.rewrite_pr_onto_base(fake_repo.prs[2], base_ref="main")
+        fake_repo.rewrite_pr_onto_base(fake_repo.prs[3], base_ref=fake_repo.prs[2].head_ref)
+        run_command(["jj", "git", "fetch", "--remote", "origin", "--branch", "main"], repo)
+        run_command(["jj", "rebase", "-s", changes[1].change_id, "-o", "main@origin"], repo)
+    else:
+        fake_repo.advance_branch(
+            fake_repo.prs[3].head_ref,
+            path="feature-3.txt",
+            contents="feature 3 with a suggestion\n",
+            message="Apply suggestions from code review",
+        )
+    refs_before = remote_refs(fake_repo.git_dir)
+
+    exit_code = run_main(repo, config_path, "submit", head)
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    unwrapped = " ".join(captured.err.split())
+    assert remote_refs(fake_repo.git_dir) == refs_before
+    if drift == "teammate_push":
+        assert "PR #3 is at commit" in unwrapped
+        assert "jj-stack checkout --pull-request 3" in unwrapped
+        return
+    assert unwrapped.count("Error:") == 1
+    assert "GitHub updated PR #2, PR #3" in unwrapped
+    assert f"jj-stack sync {head[:8]}" in unwrapped
+
+    assert run_main(repo, config_path, "sync", head) == 0
+    local = selected_stack(repo).changes
+    assert [fake_repo.prs[number].head_sha for number in (2, 3)] == [
+        change.commit_id for change in local
+    ]
+
+
 def test_submit_fails_closed_when_saved_remote_branch_drifted_externally(
     tmp_path: Path,
     monkeypatch,

@@ -10,6 +10,7 @@ from jj_stack.errors import CliError, DriftError
 from jj_stack.formatting import format_pr_label
 from jj_stack.identifiers import ChangeId, CommitId, short_change_id
 from jj_stack.models.git import GitRemote
+from jj_stack.models.github import GithubStack
 from jj_stack.models.stack import LocalCommit, LocalStack
 from jj_stack.models.tracking import TrackedPR
 from jj_stack.stack.change_state import (
@@ -29,6 +30,7 @@ from jj_stack.stack.change_state import (
     live_pr,
     stop_error,
 )
+from jj_stack.stack.github_stack_safety import github_rewrote_stack
 from jj_stack.stack.pr_branches import ResolvedPRBranch
 from jj_stack.ui import Message
 
@@ -38,9 +40,11 @@ from .models import PreparedSubmitChange
 def prepare_submit_changes(
     *,
     branch_resolutions: tuple[ResolvedPRBranch, ...],
+    github_stacks: tuple[GithubStack, ...],
     lookups: Mapping[str, ChangeObservation],
     remote_targets: Mapping[str, CommitId],
     stack: LocalStack,
+    tracked_prs: Mapping[ChangeId, TrackedPR],
 ) -> tuple[PreparedSubmitChange, ...]:
     """Classify every selected change and describe the one atomic remote update.
 
@@ -49,28 +53,73 @@ def prepare_submit_changes(
     would let a mid-stack failure surface only after those mutations had happened.
     """
 
-    head = stack.head.change_id
-    prepared: list[PreparedSubmitChange] = []
-    for resolution, change in zip(branch_resolutions, stack.changes, strict=True):
-        remote_target = remote_targets.get(resolution.branch)
-        observed_target: CommitId | None | Unobserved = remote_target
+    states: list[ChangeState] = []
+    for resolution in branch_resolutions:
+        observed_target: CommitId | None | Unobserved = remote_targets.get(resolution.branch)
         if resolution.recovered:
             # An interrupted first submit left this branch, and its commit's change-ID header
             # already proved it belongs to this change.
             observed_target = UNOBSERVED
-        change_state = classify(
-            replace(lookups[resolution.branch], remote_target=observed_target)
+        states.append(
+            classify(replace(lookups[resolution.branch], remote_target=observed_target))
         )
-        _require_submittable(change_state, head_change_id=head)
-        prepared.append(
-            PreparedSubmitChange(
-                branch=resolution.branch,
-                expected_remote_target=remote_target,
-                change=change,
-                pr=live_pr(change_state),
-            )
+    head = short_change_id(stack.head.change_id)
+    moved_by_github = _moved_by_github(
+        tuple(states), github_stacks=github_stacks, tracked_prs=tracked_prs
+    )
+    if moved_by_github:
+        # One sync updates them all.
+        prs = ui.join(
+            lambda state: format_pr_label(state.pr.number, url=state.pr.html_url), moved_by_github
         )
-    return tuple(prepared)
+        raise DriftError(
+            t"GitHub updated {prs} while merging or rebasing the GitHub stack, so submit made "
+            t"no changes.",
+            condition="remote_branch_moved",
+            hint=t"Run {ui.cmd(f'jj-stack sync {head}')} to bring GitHub's updates into the "
+            t"local stack.",
+        )
+    for state in states:
+        _require_submittable(state, head_change_id=stack.head.change_id)
+    return tuple(
+        PreparedSubmitChange(
+            branch=resolution.branch,
+            expected_remote_target=remote_targets.get(resolution.branch),
+            change=change,
+            pr=live_pr(state),
+        )
+        for resolution, change, state in zip(
+            branch_resolutions, stack.changes, states, strict=True
+        )
+    )
+
+
+def _moved_by_github(
+    states: tuple[ChangeState, ...],
+    *,
+    github_stacks: tuple[GithubStack, ...],
+    tracked_prs: Mapping[ChangeId, TrackedPR],
+) -> tuple[PRHeadMoved, ...]:
+    """The PRs GitHub moved while merging or rebasing their GitHub stack."""
+
+    tracked = {pr.pr_identity.pr_number for pr in tracked_prs.values()}
+    unmoved = {
+        state.pr.number
+        for state in states
+        if isinstance(state, WithPR)
+        and state.pr.head.sha == state.tracked.submitted_baseline.commit_id
+    }
+    rewritten = {
+        number
+        for stack in github_stacks
+        if github_rewrote_stack(stack, tracked=tracked, unmoved=unmoved)
+        for number in stack.active_pr_numbers
+    }
+    return tuple(
+        state
+        for state in states
+        if isinstance(state, PRHeadMoved) and state.pr.number in rewritten
+    )
 
 
 def _require_submittable(
