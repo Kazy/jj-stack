@@ -2134,12 +2134,13 @@ def test_submit_sends_github_stack_rewrites_to_sync_in_one_error(
         run_command(["jj", "git", "fetch", "--remote", "origin", "--branch", "main"], repo)
         run_command(["jj", "rebase", "-s", changes[1].change_id, "-o", "main@origin"], repo)
     else:
-        fake_repo.advance_branch(
-            fake_repo.prs[3].head_ref,
-            path="feature-3.txt",
-            contents="feature 3 with a suggestion\n",
-            message="Apply suggestions from code review",
-        )
+        for number in (2, 3):
+            fake_repo.advance_branch(
+                fake_repo.prs[number].head_ref,
+                path=f"feature-{number}.txt",
+                contents=f"feature {number} with a suggestion\n",
+                message="Apply suggestions from code review",
+            )
     refs_before = remote_refs(fake_repo.git_dir)
 
     exit_code = run_main(repo, config_path, "submit", head)
@@ -2148,11 +2149,14 @@ def test_submit_sends_github_stack_rewrites_to_sync_in_one_error(
     assert exit_code == 1
     unwrapped = " ".join(captured.err.split())
     assert remote_refs(fake_repo.git_dir) == refs_before
-    if drift == "teammate_push":
-        assert "PR #3 is at commit" in unwrapped
-        assert "jj-stack checkout --pull-request 3" in unwrapped
-        return
     assert unwrapped.count("Error:") == 1
+    if drift == "teammate_push":
+        # Each PR keeps its own repair command, and the rerun hint appears once.
+        for number in (2, 3):
+            assert f"PR #{number} is at commit" in unwrapped
+            assert f"jj-stack checkout --pull-request {number}" in unwrapped
+        assert unwrapped.count("rerun") == 1
+        return
     assert "GitHub updated PR #2, PR #3" in unwrapped
     assert f"jj-stack sync {head[:8]}" in unwrapped
 

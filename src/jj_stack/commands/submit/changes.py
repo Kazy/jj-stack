@@ -79,6 +79,8 @@ def prepare_submit_changes(
             hint=t"Run {ui.cmd(f'jj-stack sync {head}')} to bring GitHub's updates into the "
             t"local stack.",
         )
+    if stops := tuple(state for state in states if isinstance(state, Stop)):
+        raise stop_error(*stops, rerun=f"jj-stack submit {head}")
     for state in states:
         _require_submittable(state, head_change_id=stack.head.change_id)
     return tuple(
@@ -137,8 +139,6 @@ def _require_submittable(
             t"{ui.cmd(f'jj-stack sync {head}')} followed by "
             t"{ui.cmd(f'jj-stack submit {head}')}.",
         )
-    if isinstance(state, Stop):
-        raise stop_error(state, rerun=f"jj-stack submit {head}")
     if isinstance(state, (Closed, Merged)):
         raise _not_open_error(
             state,

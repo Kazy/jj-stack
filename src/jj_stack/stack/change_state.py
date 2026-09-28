@@ -634,12 +634,19 @@ def trunk_evidence_reason(state: WithPR) -> Message:
     return "no merge result is on trunk"
 
 
-def stop_error(state: Stop, *, rerun: str) -> CliError:
-    """Fail closed on one stop state with its shared wording and the command to rerun."""
+def stop_error(*states: Stop, rerun: str) -> CliError:
+    """Build the error for one or more stop states, ending with the command to rerun."""
 
-    message: Message = t"{state.reason}."
-    hint: Message = t"{_capitalized(state.repair)}, then rerun {ui.cmd(rerun)}."
-    condition = state.drift_condition
+    if len(states) == 1:
+        message: Message = t"{states[0].reason}."
+        hint: Message = t"{_capitalized(states[0].repair)}, then rerun {ui.cmd(rerun)}."
+    else:
+        message = (
+            "Stopped before making any changes:",
+            *(("\n  • ", s.reason, ". ", _capitalized(s.repair), ".") for s in states),
+        )
+        hint = t"After these repairs, rerun {ui.cmd(rerun)}."
+    condition = states[0].drift_condition
     if condition is None:
         return CliError(message, hint=hint)
     return DriftError(message, condition=condition, hint=hint)
