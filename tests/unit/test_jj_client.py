@@ -5,6 +5,7 @@ import re
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
@@ -29,6 +30,7 @@ from jj_stack.stack.observation import observe_change_copies, observe_stack_comm
 from tests.support.change_helpers import make_change
 
 _REPO_GIT_DIR = str(Path("/repo/.git"))
+_PUSH_REMOTE = f"jj-stack-push-{UUID(int=0).hex}"
 
 
 class _AmbiguousRevsetClient(JjClient):
@@ -225,12 +227,14 @@ def test_remote_failure_redacts_http_userinfo_without_changing_subprocess_argv(
             "git",
             "--git-dir",
             _REPO_GIT_DIR,
+            "-c",
+            f"remote.{_PUSH_REMOTE}.url={remote_url}",
             "push",
             "--atomic",
             "--no-follow-tags",
             "--no-verify",
             "--force-with-lease=refs/heads/jj-stack/feat:abc123",
-            remote_url,
+            _PUSH_REMOTE,
             "def456:refs/heads/jj-stack/feat",
         ):
             return subprocess.CompletedProcess(
@@ -242,6 +246,7 @@ def test_remote_failure_redacts_http_userinfo_without_changing_subprocess_argv(
         raise AssertionError(f"unexpected command: {invocation!r}")
 
     monkeypatch.setattr(subprocess, "run", runner)
+    monkeypatch.setattr("jj_stack.jj.client.uuid4", lambda: UUID(int=0))
 
     with pytest.raises(JjCommandError) as raised:
         JjClient(Path("/repo")).mutate_remote_pr_branch_refs(
@@ -263,7 +268,7 @@ def test_remote_failure_redacts_http_userinfo_without_changing_subprocess_argv(
     assert "could not access" in rendered
     assert "--force-with-lease" not in rendered
     assert "no PR branch changed" in rendered
-    assert remote_url in seen_commands[-1]
+    assert f"remote.{_PUSH_REMOTE}.url={remote_url}" in seen_commands[-1]
 
 
 def test_missing_pr_branch_fetch_isolation_is_a_shared_dry_run_terminal(
@@ -435,13 +440,15 @@ def test_remote_pr_branch_ref_mutation_uses_one_atomic_exact_lease_push(
                 stderr="",
             )
         if invocation[3:] == (
+            "-c",
+            f"remote.{_PUSH_REMOTE}.url=git@github.test:octo-org/repo.git",
             "push",
             "--atomic",
             "--no-follow-tags",
             "--no-verify",
             f"--force-with-lease={old_ref}:old",
             f"--force-with-lease={new_ref}:",
-            "git@github.test:octo-org/repo.git",
+            _PUSH_REMOTE,
             f"updated:{old_ref}",
             f"created:{new_ref}",
         ):
@@ -449,6 +456,7 @@ def test_remote_pr_branch_ref_mutation_uses_one_atomic_exact_lease_push(
         raise AssertionError(f"unexpected command: {invocation!r}")
 
     monkeypatch.setattr(subprocess, "run", runner)
+    monkeypatch.setattr("jj_stack.jj.client.uuid4", lambda: UUID(int=0))
     client = JjClient(Path("/repo"))
     client.mutate_remote_pr_branch_refs(
         remote="origin",
@@ -466,7 +474,7 @@ def test_remote_pr_branch_ref_mutation_uses_one_atomic_exact_lease_push(
         ),
     )
 
-    pushes = [command for command in seen_commands if command[3:4] == ("push",)]
+    pushes = [command for command in seen_commands if "push" in command]
     assert len(pushes) == 1
 
 

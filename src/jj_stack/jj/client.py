@@ -14,6 +14,7 @@ from itertools import batched
 from pathlib import Path
 from textwrap import dedent
 from typing import Literal, Protocol
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -855,13 +856,24 @@ class JjClient:
             return
 
         configured_remote = self._git_remote(remote)
+        # Git 2.56 updates a matching remote's tracking refs after a URL push, so push through a
+        # remote defined only for this command, with no fetch mapping. The name is random so a
+        # user's remote of the same name cannot add its URLs or mappings.
+        push_remote = f"jj-stack-push-{uuid4().hex}"
         # Carry only the leased PR branch refs: tag auto-follow would publish unrelated local
         # tags, and a pre-push hook was never invoked when this went through `jj git push`.
-        command = ["push", "--atomic", "--no-follow-tags", "--no-verify"]
+        command = [
+            "-c",
+            f"remote.{push_remote}.url={configured_remote.push_url}",
+            "push",
+            "--atomic",
+            "--no-follow-tags",
+            "--no-verify",
+        ]
         for ref, update in zip(refs, ordered_updates, strict=True):
             expected = update.expected_target or ""
             command.append(f"--force-with-lease={ref}:{expected}")
-        command.append(configured_remote.push_url)
+        command.append(push_remote)
         for ref, update in zip(refs, ordered_updates, strict=True):
             desired = update.desired_target or ""
             command.append(f"{desired}:{ref}")

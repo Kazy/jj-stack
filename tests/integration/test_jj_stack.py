@@ -278,7 +278,7 @@ def test_visible_pr_bookmark_does_not_block_broad_operations(
 
 
 @pytest.mark.parametrize("layout_flag", ("--colocate", "--no-colocate"))
-def test_direct_git_pr_branch_ref_operations_use_the_backing_store(
+def test_direct_git_pr_branch_ref_operations_preserve_local_refs(
     tmp_path: Path,
     layout_flag: str,
 ) -> None:
@@ -385,6 +385,8 @@ def test_direct_git_pr_branch_ref_operations_use_the_backing_store(
     heads = remote_refs(remote)
     assert heads[f"refs/heads/{branch}"] == new_commit
     assert heads[f"refs/heads/{created_branch}"] == new_commit
+    run_command(["jj", "git", "import"], repo)
+    assert client.visible_pr_bookmark_targets() == visible_pr_bookmarks
 
     run_command(
         [
@@ -449,6 +451,7 @@ def test_direct_git_pr_branch_ref_operations_use_the_backing_store(
     heads = remote_refs(remote)
     assert f"refs/heads/{branch}" not in heads
     assert f"refs/heads/{created_branch}" not in heads
+    run_command(["jj", "git", "import"], repo)
     assert client.visible_pr_bookmark_targets() == visible_pr_bookmarks
     assert (git_root == repo / ".git") is (layout_flag == "--colocate")
 
