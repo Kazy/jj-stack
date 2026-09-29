@@ -146,13 +146,20 @@ async def _run_merge(
                 )
             outcome, github_repo_state = await _request_merge_async(prepared_merge, github_client)
         if isinstance(outcome, PendingMerge):
-            result = outcome.result() if no_wait else await outcome.wait(github_client)
+            _print_merge_result(outcome.result())
+            if no_wait:
+                console.output(
+                    t"After GitHub finishes merging, run "
+                    t"{ui.cmd(f'jj-stack sync {prepared_merge.sync_head}')}.",
+                )
+                return 0
+            result = await outcome.wait(github_client)
         else:
             result = outcome
-        _print_merge_result(result, sync_head=prepared_merge.sync_head)
+        _print_merge_result(result)
         if result.blocked:
             return 1
-        if result.pending or not result.applied:
+        if not result.applied:
             return 0
         console.output("Updating the local stack after the completed merge:")
         try:
@@ -414,7 +421,7 @@ def _resolve_merge_method(
     return allowed_methods[0]
 
 
-def _print_merge_result(result: MergeResult, *, sync_head: str) -> None:
+def _print_merge_result(result: MergeResult) -> None:
     console.output(_result_header(result))
     for action in result.actions:
         console.action_row(
@@ -425,10 +432,6 @@ def _print_merge_result(result: MergeResult, *, sync_head: str) -> None:
     if result.final_trunk_commit_id is not None:
         console.output(
             t"GitHub reported final trunk commit {ui.commit_id(result.final_trunk_commit_id)}."
-        )
-    if result.pending:
-        console.output(
-            t"After GitHub finishes merging, run {ui.cmd(f'jj-stack sync {sync_head}')}."
         )
 
 
