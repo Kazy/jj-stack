@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from jj_stack.errors import CliError
+from jj_stack.errors import EXIT_BUSY, CliError
 from jj_stack.state import operation_lock as operation_lock_module
 from jj_stack.state.operation_lock import (
     acquire_operation_lock,
@@ -31,7 +31,7 @@ def test_operation_lock_blocks_another_process_with_holder_diagnostic(tmp_path: 
             """
 from pathlib import Path
 import sys
-from jj_stack.errors import CliError
+from jj_stack.errors import CliError, resolve_exit_code
 from jj_stack.state.operation_lock import acquire_operation_lock
 
 try:
@@ -43,13 +43,13 @@ try:
         pass
 except CliError as error:
     print(error)
-    raise SystemExit(7)
+    raise SystemExit(resolve_exit_code(error))
 raise SystemExit(0)
 """,
             state_dir,
         )
 
-    assert completed.returncode == 7
+    assert completed.returncode == EXIT_BUSY
     assert "parent" in completed.stdout
     assert "PID" in completed.stdout
 

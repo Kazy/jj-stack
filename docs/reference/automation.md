@@ -131,6 +131,7 @@ Follow the recovery command printed by jj-stack. In particular:
 | 6 | A selector matched more than one target. |
 | 10 | `view` or `list` printed an incomplete report. |
 | 11 | `in-use` could not determine the answer. |
+| 12 | Another jj-stack command is changing this repo; retry after it finishes. |
 | 130 | The command was interrupted. |
 
 Exit codes classify the outcome; command output explains the particular problem and what to do

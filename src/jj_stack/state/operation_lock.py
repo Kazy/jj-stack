@@ -16,7 +16,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import BinaryIO
 
-from jj_stack.errors import CliError
+from jj_stack.errors import EXIT_BUSY, CliError
 from jj_stack.state.store import TrackingStore
 
 LOCK_FILENAME = "operation.lock"
@@ -36,6 +36,8 @@ class OperationLockHolder:
 
 class OperationLockBusyError(CliError):
     """Another jj-stack command holds the repo operation lock."""
+
+    exit_code = EXIT_BUSY
 
 
 class OperationLock:
