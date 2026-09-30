@@ -11,6 +11,7 @@ from dataclasses import asdict
 from hashlib import sha1
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import FunctionType
 from typing import Any, Literal, get_args
 
 import pytest
@@ -66,10 +67,10 @@ MergeMethod = Literal["squash", "rebase"]
 RULE_NAMES: set[str] = set()
 
 
-def rule(**strategies: Any) -> Callable[[Callable[..., None]], Callable[..., Any]]:
+def rule(**strategies: Any) -> Callable[[FunctionType], Callable[..., Any]]:
     """Hypothesis's rule, also recording which rules an example fired."""
 
-    def decorate(action: Callable[..., None]) -> Callable[..., Any]:
+    def decorate(action: FunctionType) -> Callable[..., Any]:
         RULE_NAMES.add(action.__name__)
 
         @functools.wraps(action)
