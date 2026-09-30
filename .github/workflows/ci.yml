@@ -65,6 +65,24 @@ jobs:
           fi
           printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
 
+      - name: Install current Git
+        if: runner.os == 'macOS'
+        run: brew install git
+
+      - name: Check Git version
+        shell: bash
+        run: |
+          git --version
+          # Git 2.56 changed which refs a push by URL updates. Other runners keep their own
+          # Git so older versions stay covered, but this one must run the newer behavior.
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            IFS=. read -r major minor _ <<< "$(git --version | awk '{print $3}')"
+            if (( major < 2 || (major == 2 && minor < 56) )); then
+              echo "::error::The macOS job needs Git 2.56 or newer; found $(git --version)."
+              exit 1
+            fi
+          fi
+
       - name: Run local verification suite
         shell: bash
         run: ./check.py
