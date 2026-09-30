@@ -67,7 +67,10 @@ jobs:
 
       - name: Install current Git
         if: runner.os == 'macOS'
-        run: brew install git
+        # The runner image's formula list can predate the current Git release.
+        run: |
+          brew update
+          brew install git
 
       - name: Check Git version
         shell: bash
