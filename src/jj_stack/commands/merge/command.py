@@ -43,6 +43,7 @@ from jj_stack.commands.sync import converge_selected_stack
 from jj_stack.concurrency import wait_for_read_tasks
 from jj_stack.config import MergeMethod
 from jj_stack.errors import CliError, error_hint
+from jj_stack.formatting import pr_url
 from jj_stack.github.client import GithubClient, GithubClientError
 from jj_stack.github.error_messages import (
     observe_github_repo,
@@ -147,6 +148,7 @@ async def _run_merge(
             outcome, github_repo_state = await _request_merge_async(prepared_merge, github_client)
         if isinstance(outcome, PendingMerge):
             _print_merge_result(outcome.result())
+            _report_merge_requested(outcome, head_change_id=prepared_merge.stack.head.change_id)
             if no_wait:
                 console.output(
                     t"After GitHub finishes merging, run "
@@ -419,6 +421,22 @@ def _resolve_merge_method(
             t"or {ui.code('jj-stack.merge_method')}.",
         )
     return allowed_methods[0]
+
+
+def _report_merge_requested(pending: PendingMerge, *, head_change_id: ChangeId) -> None:
+    # From here, stopping the command no longer stops the merge.
+    pr_number = pending.merge.target.identity.pr_number
+    console.jsonl_record(
+        {
+            "type": "merge_requested",
+            "pr": {
+                "number": pr_number,
+                "url": pr_url(pr_number, repo=pending.execution.repo, url=None),
+            },
+            "state": pending.request.status,
+            "head_change_id": head_change_id,
+        }
+    )
 
 
 def _print_merge_result(result: MergeResult) -> None:

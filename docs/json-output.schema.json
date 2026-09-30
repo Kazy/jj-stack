@@ -80,7 +80,7 @@
       ]
     },
     "jsonlRecord": {
-      "description": "One line of --output=jsonl: a message, the current activity, or a --json payload.",
+      "description": "One line of --output=jsonl: a message, the current activity, a --json payload, or an accepted merge request.",
       "oneOf": [
         {
           "type": "object",
@@ -150,6 +150,46 @@
                   "$ref": "#/$defs/listOutput"
                 }
               ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "pr",
+            "state",
+            "head_change_id"
+          ],
+          "properties": {
+            "type": {
+              "const": "merge_requested"
+            },
+            "pr": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "number",
+                "url"
+              ],
+              "properties": {
+                "number": {
+                  "type": "integer"
+                },
+                "url": {
+                  "type": "string"
+                }
+              }
+            },
+            "state": {
+              "enum": [
+                "pending",
+                "enqueued"
+              ]
+            },
+            "head_change_id": {
+              "type": "string"
             }
           }
         }

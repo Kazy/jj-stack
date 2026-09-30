@@ -30,6 +30,7 @@ from ..support.integration_helpers import (
     sign_commit,
     update_remote_ref,
 )
+from ..support.json_schema import parse_jsonl_output
 from ..support.output_assertions import assert_output_contains
 from .submit_command_helpers import (
     configure_submit_environment,
@@ -71,10 +72,17 @@ def test_merge_no_wait_resumes_a_pending_or_queued_request_and_syncs_after_waiti
     assert "jj-stack sync" in captured.out
 
     # GitHub still reports the request pending, with the queue's own merge method; a rerun
-    # recognizes it as the same request rather than another one.
-    assert run_main(repo, config_path, "merge", *selector, "--no-wait") == 0
-    pending = capsys.readouterr()
-    assert "Merge requested" in pending.out and "already pending" not in pending.out
+    # recognizes it as the same request rather than another one. A program reading JSONL learns
+    # that GitHub holds the request, so stopping the command no longer stops the merge.
+    assert run_main(repo, config_path, "merge", *selector, "--no-wait", "--output=jsonl") == 0
+    records = parse_jsonl_output(capsys.readouterr().out)
+    assert {
+        "type": "merge_requested",
+        "pr": {"number": 1, "url": "https://github.com/octo-org/stacked-prs/pull/1"},
+        "state": "pending",
+        "head_change_id": stack.head.change_id,
+    } in records
+    assert not any("already pending" in (record.get("text") or "") for record in records)
     assert fake_repo.stack_merge_requests == [request]
 
     # GitHub finishes the asynchronous request: the PR now sits in the queue.

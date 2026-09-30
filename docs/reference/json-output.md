@@ -241,6 +241,10 @@ Each line has a `type`:
   count items such as pull requests when the command knows the count. A `null` text means the
   activity finished.
 - `result`: the `--json` document of `view` or `list`, in `data`, when that flag is also passed.
+- `merge_requested`: `merge` sent a request that GitHub accepted but has not finished. From
+  then on, stopping the command does not stop the merge. `pr` has the `number` and `url` of
+  the last PR to merge, `state` is `pending` or `enqueued`, and `head_change_id` is the stack
+  head to pass to `jj-stack sync`.
 
 ```json
 {"type": "status", "text": "Pushing PR branches"}

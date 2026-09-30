@@ -532,6 +532,13 @@ def machine_output(payload: object) -> None:
     _STDOUT_STREAM.flush()
 
 
+def jsonl_record(record: dict[str, object]) -> None:
+    """Write one typed JSONL record for programs; text output shows nothing extra."""
+
+    if _JSONL:
+        _write_jsonl(record)
+
+
 def error(*objects: ConsoleObject, **kwargs) -> None:
     """Write styled error output to stderr."""
 
