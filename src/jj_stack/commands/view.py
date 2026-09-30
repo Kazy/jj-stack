@@ -88,6 +88,7 @@ def view(
     as_json: bool,
     cli_args: JjCliArgs,
     debug: bool,
+    ignore_working_copy: bool,
     repo: Path | None,
     selectors: tuple[ViewSelector, ...],
     verbose: bool,
@@ -98,6 +99,7 @@ def view(
         repo=repo,
         cli_args=cli_args,
         debug=debug,
+        snapshot_working_copy=not ignore_working_copy,
     )
     return _run_status(
         context=context,

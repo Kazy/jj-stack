@@ -115,6 +115,7 @@ def test_view_shares_pr_observation_without_losing_selector_order(
             as_json=True,
             cli_args=JjCliArgs(),
             debug=False,
+            ignore_working_copy=False,
             repo=tmp_path,
             selectors=tuple(
                 view_module.ViewSelector(kind="revset", value=value)
@@ -183,6 +184,7 @@ def test_view_keeps_selector_errors_between_their_neighboring_reports(
             as_json=False,
             cli_args=JjCliArgs(),
             debug=False,
+            ignore_working_copy=False,
             repo=tmp_path,
             selectors=tuple(
                 view_module.ViewSelector(kind="revset", value=value)

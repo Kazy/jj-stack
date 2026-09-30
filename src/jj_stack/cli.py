@@ -410,6 +410,7 @@ def build_parser() -> ArgumentParser:
         action="store_true",
         help="Show every change, plus unresolved review threads and check results with links",
     )
+    _add_ignore_working_copy_argument(view_parser)
     list_parser = _add_command_parser(
         subcommands,
         command="list",
@@ -424,6 +425,7 @@ def build_parser() -> ArgumentParser:
         action="store_true",
         help="Output tracked stacks and orphaned PRs as JSON",
     )
+    _add_ignore_working_copy_argument(list_parser)
     relink_parser = _add_command_parser(
         subcommands,
         command="relink",
@@ -871,9 +873,21 @@ def _default_view_handler(args: Namespace) -> int:
         cli_args=args.cli_args,
         debug=args.debug,
         as_json=False,
+        ignore_working_copy=False,
         repo=args.repo,
         selectors=(),
         verbose=False,
+    )
+
+
+def _add_ignore_working_copy_argument(parser: ArgumentParser) -> None:
+    parser.add_argument(
+        "--ignore-working-copy",
+        action="store_true",
+        help=(
+            "Report the repo as jj last recorded it, without snapshotting or updating the "
+            "working copy"
+        ),
     )
 
 

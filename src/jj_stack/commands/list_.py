@@ -91,6 +91,7 @@ def list_(
     as_json: bool,
     cli_args: JjCliArgs,
     debug: bool,
+    ignore_working_copy: bool,
     repo: Path | None,
 ) -> int:
     """CLI entrypoint for `list`."""
@@ -99,6 +100,7 @@ def list_(
         repo=repo,
         cli_args=cli_args,
         debug=debug,
+        snapshot_working_copy=not ignore_working_copy,
     )
     return _run_list(
         as_json=as_json,

@@ -59,6 +59,7 @@ def bootstrap_context(
     repo: Path | None,
     cli_args: JjCliArgs,
     debug: bool,
+    snapshot_working_copy: bool = True,
 ) -> CommandContext:
     """Resolve the repo, read jj's config once, and initialize the console and logging."""
 
@@ -71,7 +72,8 @@ def bootstrap_context(
     jj_client = JjClient(repo_root, cli_args=cli_args, settings=settings)
     config = load_config(settings=settings)
     install_pr_branch_namespace(config.branch_prefix)
-    jj_client.enable_initial_working_copy_snapshot()
+    if snapshot_working_copy:
+        jj_client.enable_initial_working_copy_snapshot()
     configure_logging(debug=debug, configured_level=config.logging.level)
     return CommandContext(
         config=config,

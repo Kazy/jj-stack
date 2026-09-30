@@ -629,3 +629,36 @@ def test_list_and_view_report_a_missing_pr_without_forgetting_its_link(
     assert change["status"] == "missing"
     assert "PR #1" in change["reason"]
     assert "jj-stack relink" in change["repair"]
+
+
+def test_reads_that_ignore_the_working_copy_leave_jj_state_untouched(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    """A GUI that snapshots on its own can read a stale workspace with pending edits."""
+
+    repo, fake_repo = init_fake_github_repo_with_submitted_feature(tmp_path)
+    config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
+    other = tmp_path / "other-workspace"
+    run_command(["jj", "workspace", "add", "-r", "@-", str(other)], repo)
+    write_file(repo / "moved.txt", "moved\n")
+    run_command(["jj", "squash", "--into", "other-workspace@", "moved.txt"], repo)
+    write_file(other / "pending.txt", "pending\n")
+
+    def operation_heads() -> str:
+        return run_command(
+            ["jj", "--ignore-working-copy", "op", "log", "-n1", "--no-graph", "-T", "id"], repo
+        ).stdout
+
+    heads_before = operation_heads()
+    files_before = sorted(path.name for path in other.iterdir())
+
+    assert run_main(other, config_path, "view", "--ignore-working-copy") == 0
+    assert run_main(other, config_path, "list", "--ignore-working-copy") == 0
+    assert operation_heads() == heads_before
+    assert sorted(path.name for path in other.iterdir()) == files_before
+
+    capsys.readouterr()
+    assert run_main(other, config_path, "view") == EXIT_FAILURE
+    assert "jj workspace update-stale" in capsys.readouterr().err

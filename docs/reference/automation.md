@@ -51,6 +51,10 @@ discovers stacks that exist only on GitHub.
 For decisions in a script, inspect each change's documented `status` value, such as `open` or
 `merged`. A stack row's `status` is a human-readable summary whose wording may change.
 
+A program that snapshots the working copy itself, such as a GUI, can pass
+`--ignore-working-copy` to `view` or `list`, as with jj. The report then leaves out edits jj has
+not snapshotted yet.
+
 ### Keep partial reports
 
 `view` and `list` exit 10 when they can report some state but cannot produce a complete report.
