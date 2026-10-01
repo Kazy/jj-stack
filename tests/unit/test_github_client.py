@@ -68,17 +68,6 @@ def test_merge_details_paginate_without_mixing_pr_heads_or_bases(changed: str | 
                         )
                     },
                 },
-                "baseRef": {
-                    "rules": connection(
-                        [
-                            {
-                                "type": "REQUIRED_STATUS_CHECKS",
-                                "parameters": {"requiredStatusChecks": [{"context": "build"}]},
-                            }
-                        ],
-                        "rules-next",
-                    )
-                },
                 "reviewThreads": connection([resolved] * 100, "threads-next"),
                 "statusCheckRollup": {
                     "contexts": connection(
@@ -90,7 +79,6 @@ def test_merge_details_paginate_without_mixing_pr_heads_or_bases(changed: str | 
         elif "threads_1" in variables:
             assert variables["threads_1"] == "threads-next"
             assert variables["checks_1"] == "checks-next"
-            assert variables["rules_1"] == "rules-next"
             assert variables["merge_checks_1"] == "merge-next"
             page = {
                 "headRefOid": "b" * 40 if changed == "head" else pr.head.sha,
@@ -100,20 +88,6 @@ def test_merge_details_paginate_without_mixing_pr_heads_or_bases(changed: str | 
                     "statusCheckRollup": {
                         "contexts": connection([{"name": "security", "state": "SUCCESS"}])
                     },
-                },
-                "baseRef": {
-                    "rules": connection(
-                        [
-                            {
-                                "type": "REQUIRED_STATUS_CHECKS",
-                                "parameters": {"requiredStatusChecks": [{"context": "security"}]},
-                            },
-                            {
-                                "type": "PULL_REQUEST",
-                                "parameters": {"requiredReviewThreadResolution": True},
-                            },
-                        ]
-                    )
                 },
                 "reviewThreads": connection([unresolved]),
                 "statusCheckRollup": {
@@ -149,10 +123,7 @@ def test_merge_details_paginate_without_mixing_pr_heads_or_bases(changed: str | 
         assert details is None
     else:
         assert details is not None
-        assert details.required_checks == ("build", "security")
-        assert details.missing_checks == ()
         assert len(details.merge_checks) == 101
-        assert details.resolve_threads
         assert len(details.unresolved_threads) == 1
         thread = details.unresolved_threads[0]
         assert thread.is_outdated

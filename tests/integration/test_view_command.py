@@ -10,7 +10,7 @@ from jj_stack.jj.client import JjClient
 from jj_stack.models.github_details import GithubCheck, GithubPRMergeDetails, GithubReviewThread
 from jj_stack.state.store import TrackingStore, resolve_state_path
 
-from ..support.fake_github import FakeGithubState, create_app
+from ..support.fake_github import FakeGithubState, FakeMergeRequirements, create_app
 from ..support.integration_helpers import (
     OfflineGithubClient,
     commit_file,
@@ -39,6 +39,7 @@ def test_verbose_view_keeps_summary_on_detail_failure_and_shows_evidence_on_retr
     config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
     fake_repo.prs[1].merge_state_status = "BLOCKED"
     fake_repo.prs[1].checks["build"] = "PENDING"
+    fake_repo.branch_protection["main"] = FakeMergeRequirements(reviews=1)
     fake_repo.create_pr_review(pr_number=1, reviewer_login="alice", state="APPROVED")
     thread_url = "https://github.test/octo-org/stacked-prs/pull/1#discussion_r4010947684"
     evidence = GithubPRMergeDetails(

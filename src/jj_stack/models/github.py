@@ -155,6 +155,10 @@ class GithubPR(BaseModel):
     node_id: str
     number: int
     review_decision: str | None = None
+    # The branch the PR's GitHub stack lands on, when the PR is in one.
+    stack_base_ref: str | None = Field(
+        default=None, validation_alias=AliasPath("stack", "baseRefName")
+    )
     state: PRState
     title: str
 
@@ -196,6 +200,7 @@ class GithubPR(BaseModel):
             "node_id": value.get("id"),
             "number": value.get("number"),
             "review_decision": _normalize_graphql_review_decision(value.get("reviewDecision")),
+            "stack": value.get("stack"),
             "state": value.get("state", ""),
             "title": value.get("title"),
         }

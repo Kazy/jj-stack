@@ -133,6 +133,7 @@ saved-link problems omit it. The object contains:
 
 - `mergeable`: GitHub's conflict assessment, or null.
 - `required_checks`: required check names; `resolve_threads`: whether threads must be resolved.
+  Both come from the branch the PR's GitHub stack lands on, or its own base outside a stack.
 - `unresolved_threads`: all unresolved review threads, including outdated ones. Each has `path`,
   nullable `line`, `is_outdated`, the first comment's plain-text `body`, and nullable `url`.
 - `checks` and `merge_checks`: check runs and commit statuses for the PR head and test merge

@@ -700,9 +700,10 @@ are not shown.
 
 Both report specific merge warnings alongside reviews and checks, omitting GitHub's generic
 `BLOCKED` label. Blocked PRs receive a batched lookup of applicable rules, review threads, and
-checks; `view --verbose` includes other open PRs. Drafts, queued PRs, and changes with a reported
-problem are excluded. Details are discarded if the PR head or base changes during the lookup.
-GitHub computes merge state lazily, so an unknown state is not reported or polled.
+checks; `view --verbose` includes other open PRs. Rules come from the branch a PR's GitHub stack
+lands on, or its own base outside a stack. Drafts, queued PRs, and changes with a reported problem
+are excluded. Details are discarded if the PR head or base changes during the lookup. GitHub
+computes merge state lazily, so an unknown state is not reported or polled.
 
 Neither command guesses. A change with no saved PR identity is reported as not submitted,
 even if a PR happens to use the branch name that change would generate. A saved PR is always

@@ -316,17 +316,33 @@ class FakeGithubRepo:
     def full_name(self) -> str:
         return f"{self.owner}/{self.name}"
 
+    def landing_branch(self, pr: FakeGithubPR) -> str:
+        stack_number = self.stack_number_for_pr(pr.number)
+        if stack_number is None:
+            return pr.base_ref
+        return self.prs[self.github_stacks[stack_number][0]].base_ref
+
     def requirements(self, pr: FakeGithubPR) -> tuple[FakeMergeRequirements, ...]:
+        """GitHub applies the rules of the branch a stack lands on to every PR in it."""
+
+        branch = self.landing_branch(pr)
         return tuple(
             rules
             for source in (self.branch_protection, self.branch_rules)
-            if (rules := source.get(pr.base_ref)) is not None
+            if (rules := source.get(branch)) is not None
         )
 
     def merge_blocked(self, pr: FakeGithubPR) -> bool:
         checks = pr.checks | pr.merge_checks
+        reviews = [
+            str(review["state"]).upper()
+            for review in _latest_opinionated_review_payloads(self, pr.number)
+        ]
         return any(
-            (rules.reviews > 0 and _graphql_review_decision(self, pr.number) != "APPROVED")
+            (
+                rules.reviews > 0
+                and ("CHANGES_REQUESTED" in reviews or reviews.count("APPROVED") < rules.reviews)
+            )
             or any(
                 checks.get(name) not in {"SUCCESS", "NEUTRAL", "SKIPPED"} for name in rules.checks
             )
@@ -1898,6 +1914,8 @@ def _graphql_repo_payload(
                 }
             },
         }
+    if "BranchMergeRules" in query:
+        return _graphql_branch_rules(query=query, repo=repo, variables=variables)
     if "BranchTargetsBySuffix" in query:
         return _graphql_branch_targets_by_suffix(query=query, repo=repo, variables=variables)
     if "BranchTargets" in query:
@@ -2045,6 +2063,52 @@ def _graphql_branch_targets(
     return payload
 
 
+def _graphql_branch_rules(
+    *,
+    query: str,
+    repo: FakeGithubRepo,
+    variables: dict[str, object],
+) -> dict[str, object]:
+    payload: dict[str, object] = {}
+    pattern = re.compile(
+        rf"^\s*(branch_\d+): ref\(qualifiedName: ({_GRAPHQL_VARIABLE_PATTERN})\)",
+        re.MULTILINE,
+    )
+    for match in pattern.finditer(query):
+        alias, encoded_ref = match.groups()
+        branch = _resolve_graphql_string(encoded_ref, variables).removeprefix("refs/heads/")
+        if repo.ref_target(branch) is None:
+            payload[alias] = None
+            continue
+        classic = repo.branch_protection.get(branch)
+        rules = repo.branch_rules.get(branch)
+        payload[alias] = {
+            "refUpdateRule": None
+            if classic is None
+            else {
+                "requiredStatusCheckContexts": classic.checks,
+                "requiresConversationResolution": classic.resolve_threads,
+            },
+            "rules": {
+                "nodes": []
+                if rules is None
+                else [
+                    {
+                        "type": "REQUIRED_STATUS_CHECKS",
+                        "parameters": {
+                            "requiredStatusChecks": [{"context": name} for name in rules.checks],
+                        },
+                    },
+                    {
+                        "type": "PULL_REQUEST",
+                        "parameters": {"requiredReviewThreadResolution": rules.resolve_threads},
+                    },
+                ],
+            },
+        }
+    return payload
+
+
 def _graphql_branch_targets_by_suffix(
     *,
     query: str,
@@ -2084,6 +2148,8 @@ def _graphql_branch_targets_by_suffix(
 def _graphql_pr_payload(*, pr: FakeGithubPR, repo: FakeGithubRepo) -> dict[str, object]:
     payload = pr.to_graphql_payload(repo)
     payload["reviewDecision"] = _graphql_review_decision(repo, pr.number)
+    in_stack = repo.stack_number_for_pr(pr.number) is not None
+    payload["stack"] = {"baseRefName": repo.landing_branch(pr)} if in_stack else None
     if pr.merge_state_status is None and repo.requirements(pr):
         payload["mergeStateStatus"] = "BLOCKED" if repo.merge_blocked(pr) else "CLEAN"
         # A test-merge result can satisfy a required check absent from the head. GitHub then
@@ -2094,35 +2160,6 @@ def _graphql_pr_payload(*, pr: FakeGithubPR, repo: FakeGithubRepo) -> dict[str, 
             for name in rules.checks
         ):
             payload["mergeStateStatus"] = "UNSTABLE"
-    classic = repo.branch_protection.get(pr.base_ref)
-    rules = repo.branch_rules.get(pr.base_ref)
-    payload["baseRef"] = {
-        "refUpdateRule": None
-        if classic is None
-        else {
-            "requiredStatusCheckContexts": classic.checks,
-            "requiresConversationResolution": classic.resolve_threads,
-        },
-        "rules": {
-            "nodes": []
-            if rules is None
-            else [
-                {
-                    "type": "REQUIRED_STATUS_CHECKS",
-                    "parameters": {
-                        "requiredStatusChecks": [{"context": name} for name in rules.checks],
-                    },
-                },
-                {
-                    "type": "PULL_REQUEST",
-                    "parameters": {
-                        "requiredReviewThreadResolution": rules.resolve_threads,
-                    },
-                },
-            ],
-            "pageInfo": {"hasNextPage": False},
-        },
-    }
     payload["reviewThreads"] = {
         "nodes": [
             {
@@ -2143,13 +2180,23 @@ def _graphql_review_decision(
     repo: FakeGithubRepo,
     pr_number: int,
 ) -> str | None:
+    # Branch protection on the landing branch gives every PR in a stack this aggregate, but a
+    # ruleset gives it only to PRs based on that branch, and only when it requires approvals
+    # (probe PR #387, 2026-10-01; voxel #27187).
+    pr = repo.prs[pr_number]
+    sources = (
+        repo.branch_protection.get(repo.landing_branch(pr)),
+        repo.branch_rules.get(pr.base_ref),
+    )
+    required = max((rules.reviews for rules in sources if rules is not None), default=0)
+    if not required:
+        return None
     review_states = [
         str(raw_review["state"]).upper()
         for raw_review in _latest_opinionated_review_payloads(repo, pr_number)
     ]
     if "CHANGES_REQUESTED" in review_states:
         return "CHANGES_REQUESTED"
-    required = max((rules.reviews for rules in repo.requirements(repo.prs[pr_number])), default=0)
     if review_states.count("APPROVED") < required:
         return "REVIEW_REQUIRED"
     if "APPROVED" in review_states:

@@ -14,7 +14,7 @@ from textwrap import dedent, indent, shorten
 from typing import Literal
 
 import httpx2
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import AliasPath, BaseModel, ConfigDict, Field, ValidationError
 
 from jj_stack.concurrency import DEFAULT_BOUNDED_CONCURRENCY, wait_for_read_tasks
 from jj_stack.errors import EXIT_GITHUB, SummarizedError
@@ -190,14 +190,39 @@ class _GraphqlMergeRule(BaseModel):
     parameters: _GraphqlRuleParameters | None = None
 
 
-class _GraphqlLegacyRequirements(BaseModel):
-    checks: tuple[str, ...] | None = Field(default=(), alias="requiredStatusCheckContexts")
-    resolve_threads: bool = Field(default=False, alias="requiresConversationResolution")
+class _GraphqlRefUpdateRule(BaseModel):
+    """Branch protection as it applies to the viewer, who may be allowed to bypass it."""
+
+    checks: tuple[str, ...] | None = Field(default=None, alias="requiredStatusCheckContexts")
+    resolve_threads: bool = Field(alias="requiresConversationResolution")
 
 
-class _GraphqlMergeBase(BaseModel):
-    protection: _GraphqlLegacyRequirements | None = Field(default=None, alias="refUpdateRule")
-    rules: _GraphqlConnection[_GraphqlMergeRule] | None = None
+class _GraphqlBranchRules(BaseModel):
+    """Branch protection combined with the active ruleset rules on one branch."""
+
+    protection: _GraphqlRefUpdateRule | None = Field(default=None, alias="refUpdateRule")
+    rules: tuple[_GraphqlMergeRule, ...] = Field(
+        default=(), validation_alias=AliasPath("rules", "nodes")
+    )
+
+    @property
+    def required_checks(self) -> tuple[str, ...]:
+        protected = (self.protection.checks or ()) if self.protection else ()
+        ruled = (
+            check.context
+            for rule in self.rules
+            if rule.parameters
+            for check in rule.parameters.checks
+        )
+        return tuple(dict.fromkeys((*protected, *ruled)))
+
+    @property
+    def resolve_threads(self) -> bool:
+        return bool(self.protection and self.protection.resolve_threads) or any(
+            rule.type == "REQUIRED_REVIEW_THREAD_RESOLUTION"
+            or (rule.parameters is not None and rule.parameters.resolve_threads)
+            for rule in self.rules
+        )
 
 
 class _GraphqlTestMerge(BaseModel):
@@ -208,7 +233,6 @@ class _GraphqlTestMerge(BaseModel):
 class _GraphqlPRMergeDetails(BaseModel):
     head: CommitId = Field(alias="headRefOid")
     base_name: str = Field(alias="baseRefName")
-    base: _GraphqlMergeBase | None = Field(default=None, alias="baseRef")
     mergeable: str | None = None
     test_merge: _GraphqlTestMerge | None = Field(default=None, alias="potentialMergeCommit")
     threads: _GraphqlConnection[GithubReviewThread] | None = Field(
@@ -671,7 +695,11 @@ class GithubClient:
     async def get_pr_merge_details(
         self, *, prs: Sequence[GithubPR]
     ) -> dict[int, GithubPRMergeDetails | None]:
-        """Batch merge evidence and applicable rules for the observed PR heads and bases."""
+        """Batch merge evidence for the observed PR heads and bases.
+
+        GitHub applies the rules of the branch a stack lands on to every PR in it, so each PR's
+        requirements come from that branch rather than its own base.
+        """
 
         results: dict[int, GithubPRMergeDetails | None] = {}
 
@@ -682,12 +710,11 @@ class GithubClient:
             pending_threads: dict[int, str | None] = dict.fromkeys(heads)
             pending_checks: dict[int, str | None] = dict.fromkeys(heads)
             pending_merge_checks: dict[int, str | None] = dict.fromkeys(heads)
-            pending_rules: dict[int, str | None] = dict.fromkeys(heads)
-            cursors = (pending_threads, pending_checks, pending_merge_checks, pending_rules)
+            cursors = (pending_threads, pending_checks, pending_merge_checks)
             while any(cursors):
                 numbers = sorted(set().union(*cursors))
                 query, variables = _pr_merge_details_query(
-                    pending_threads, pending_checks, pending_merge_checks, pending_rules
+                    pending_threads, pending_checks, pending_merge_checks
                 )
                 payload = await self._graphql_query(
                     query,
@@ -734,45 +761,48 @@ class GithubClient:
                         pending_merge_checks,
                         absent_ok=True,
                     )
-                    rules = _consume_merge_details_page(
-                        number,
-                        page.base.rules if page.base else None,
-                        pending_rules,
-                        absent_ok=True,
-                    )
-                    protection = page.base.protection if page.base else None
-                    parameters = tuple(rule.parameters for rule in rules if rule.parameters)
                     results[number] = GithubPRMergeDetails(
                         mergeable=page.mergeable,
-                        required_checks=tuple(
-                            dict.fromkeys(
-                                (
-                                    *prior.required_checks,
-                                    *((protection.checks or ()) if protection else ()),
-                                    *(
-                                        check.context
-                                        for params in parameters
-                                        for check in params.checks
-                                    ),
-                                )
-                            )
-                        ),
-                        resolve_threads=(
-                            prior.resolve_threads
-                            or bool(protection and protection.resolve_threads)
-                            or any(params.resolve_threads for params in parameters)
-                            or any(
-                                rule.type == "REQUIRED_REVIEW_THREAD_RESOLUTION" for rule in rules
-                            )
-                        ),
                         unresolved_threads=prior.unresolved_threads
                         + tuple(thread for thread in threads if not thread.is_resolved),
                         checks=prior.checks + checks,
                         merge_checks=prior.merge_checks + merge_checks,
                     )
 
-        await _query_chunks(prs, query_chunk)
-        return results
+        landing = {pr.number: pr.stack_base_ref or pr.base.ref for pr in prs}
+        chunks = asyncio.create_task(_query_chunks(prs, query_chunk))
+        rules = asyncio.create_task(self._branch_rules(sorted(set(landing.values()))))
+        await wait_for_read_tasks(chunks, rules)
+        branch_rules = rules.result()
+        return {
+            number: details
+            and details.model_copy(
+                update={
+                    "required_checks": branch_rules[landing[number]].required_checks,
+                    "resolve_threads": branch_rules[landing[number]].resolve_threads,
+                }
+            )
+            for number, details in results.items()
+        }
+
+    async def _branch_rules(self, branches: Sequence[str]) -> dict[str, _GraphqlBranchRules]:
+        if not branches:
+            return {}
+        variables = {f"ref_{index}": f"refs/heads/{name}" for index, name in enumerate(branches)}
+        payload = await self._graphql_query(
+            _branch_rules_query(len(branches)),
+            response_name="branch rules lookup",
+            variables={**self._repo_variables, **variables},
+        )
+        repo = _graphql_repo_payload(payload, response_name="branch rules lookup")
+        return {
+            name: _validate_model(
+                repo.get(f"branch_{index}") or {},
+                model=_GraphqlBranchRules,
+                error_context=f"GitHub returned invalid rules for branch {name}",
+            )
+            for index, name in enumerate(branches)
+        }
 
     async def create_issue_comment(
         self,
@@ -1468,7 +1498,6 @@ def _pr_merge_details_query(
     threads_cursors: dict[int, str | None],
     checks_cursors: dict[int, str | None],
     merge_checks_cursors: dict[int, str | None],
-    rules_cursors: dict[int, str | None],
 ) -> tuple[str, dict[str, str]]:
     variables: dict[str, str] = {}
     selections: list[str] = []
@@ -1476,7 +1505,6 @@ def _pr_merge_details_query(
         ("threads", threads_cursors),
         ("checks", checks_cursors),
         ("merge_checks", merge_checks_cursors),
-        ("rules", rules_cursors),
     )
     for number in sorted(set().union(*(cursors for _, cursors in connections))):
         fields = ["headRefOid baseRefName mergeable potentialMergeCommit { oid }"]
@@ -1499,7 +1527,7 @@ def _pr_merge_details_query(
                       {page_info}
                     }}"""
                 )
-            elif kind in {"checks", "merge_checks"}:
+            else:
                 rollup = f"""statusCheckRollup {{
                       contexts(first: {PR_PAGE_SIZE}{after}) {{
                         nodes {{
@@ -1512,23 +1540,6 @@ def _pr_merge_details_query(
                 fields.append(
                     f"potentialMergeCommit {{ {rollup} }}" if kind == "merge_checks" else rollup
                 )
-            else:
-                fields.append(
-                    f"""baseRef {{
-                      refUpdateRule {{
-                        requiredStatusCheckContexts requiresConversationResolution
-                      }}
-                      rules(first: {PR_PAGE_SIZE}{after}) {{
-                        nodes {{ type parameters {{
-                          ... on RequiredStatusChecksParameters {{
-                            requiredStatusChecks {{ context }}
-                          }}
-                          ... on PullRequestParameters {{ requiredReviewThreadResolution }}
-                        }} }}
-                        {page_info}
-                      }}
-                    }}"""
-                )
         selections.append(f"pr_{number}: pullRequest(number: {number}) {{ {' '.join(fields)} }}")
     return (
         _repo_graphql_query(
@@ -1537,6 +1548,26 @@ def _pr_merge_details_query(
             string_variables=tuple(variables),
         ),
         variables,
+    )
+
+
+def _branch_rules_query(count: int) -> str:
+    selections = "\n".join(
+        f"""branch_{index}: ref(qualifiedName: $ref_{index}) {{
+          refUpdateRule {{ requiredStatusCheckContexts requiresConversationResolution }}
+          rules(first: {PR_PAGE_SIZE}) {{
+            nodes {{ type parameters {{
+              ... on RequiredStatusChecksParameters {{ requiredStatusChecks {{ context }} }}
+              ... on PullRequestParameters {{ requiredReviewThreadResolution }}
+            }} }}
+          }}
+        }}"""
+        for index in range(count)
+    )
+    return _repo_graphql_query(
+        operation_name="BranchMergeRules",
+        selections=selections,
+        string_variables=tuple(f"ref_{index}" for index in range(count)),
     )
 
 
@@ -1657,6 +1688,9 @@ def _pr_fields_fragment() -> str:
           }
           headRepositoryOwner {
             login
+          }
+          stack {
+            baseRefName
           }
         }
         """
