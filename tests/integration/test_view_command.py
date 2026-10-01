@@ -663,3 +663,32 @@ def test_reads_that_ignore_the_working_copy_leave_jj_state_untouched(
     capsys.readouterr()
     assert run_main(other, config_path, "view") == EXIT_FAILURE
     assert "jj workspace update-stale" in capsys.readouterr().err
+
+
+def test_view_and_list_report_readiness_approvals_and_lag_behind_trunk(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    """Each PR shows whether GitHub would merge it now; the stack shows how far trunk moved."""
+
+    repo, fake_repo = init_fake_github_repo_with_submitted_stack(tmp_path, size=2)
+    config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
+    fake_repo.branch_rules["main"] = FakeMergeRequirements(resolve_threads=True)
+    fake_repo.create_pr_review(pr_number=1, reviewer_login="alice", state="APPROVED")
+    fake_repo.prs[2].review_threads.append(
+        GithubReviewThread.model_validate(
+            {"isResolved": False, "isOutdated": False, "path": "feature-2.txt", "line": 1}
+        )
+    )
+    fake_repo.advance_branch("main", path="trunk.txt", contents="trunk\n")
+
+    assert run_main(repo, config_path, "view") == 0
+    out = " ".join(capsys.readouterr().out.split())
+    assert "✓ PR #1: 1 approval" in out
+    assert "✗ PR #2: unresolved review threads" in out
+    assert "The stack is 1 commit behind main." in out
+
+    assert run_main(repo, config_path, "list") == 0
+    out = " ".join(capsys.readouterr().out.split())
+    assert "1 ready, 1 behind main, unresolved review" in out

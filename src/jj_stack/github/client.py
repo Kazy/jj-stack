@@ -225,6 +225,23 @@ class _GraphqlBranchRules(BaseModel):
         )
 
 
+class _GraphqlReview(BaseModel):
+    state: str
+
+
+class _GraphqlPRProgress(BaseModel):
+    reviews: tuple[_GraphqlReview, ...] = Field(
+        validation_alias=AliasPath("latestOpinionatedReviews", "nodes")
+    )
+    behind: int | None = Field(
+        default=None, validation_alias=AliasPath("headRef", "compare", "aheadBy")
+    )
+
+    @property
+    def approvals(self) -> int:
+        return sum(review.state == "APPROVED" for review in self.reviews)
+
+
 class _GraphqlTestMerge(BaseModel):
     oid: CommitId
     checks: _GraphqlCheckDetails | None = Field(default=None, alias="statusCheckRollup")
@@ -784,6 +801,56 @@ class GithubClient:
             )
             for number, details in results.items()
         }
+
+    async def get_pr_progress(
+        self, *, prs: Sequence[GithubPR]
+    ) -> dict[int, tuple[int, int | None]]:
+        """Each PR's approvals from writers and, at the bottom of a stack, how far behind its
+        landing branch it is."""
+
+        results: dict[int, tuple[int, int | None]] = {}
+
+        async def query_chunk(chunk: tuple[GithubPR, ...]) -> None:
+            variables: dict[str, str] = {}
+            selections: list[str] = []
+            for pr in chunk:
+                landing = pr.stack_base_ref or pr.base.ref
+                compare = ""
+                if pr.base.ref == landing:
+                    variables[f"landing_{pr.number}"] = landing
+                    compare = (
+                        f"headRef {{ compare(headRef: $landing_{pr.number}) {{ aheadBy }} }}"
+                    )
+                selections.append(
+                    f"""pr_{pr.number}: pullRequest(number: {pr.number}) {{
+                      latestOpinionatedReviews(first: {PR_PAGE_SIZE}, writersOnly: true) {{
+                        nodes {{ state }}
+                      }}
+                      {compare}
+                    }}"""
+                )
+            payload = await self._graphql_query(
+                _repo_graphql_query(
+                    operation_name="PullRequestProgress",
+                    selections="\n".join(selections),
+                    string_variables=tuple(variables),
+                ),
+                response_name="pull request progress lookup",
+                tolerate_missing_selections=True,
+                variables={**self._repo_variables, **variables},
+            )
+            repo = _graphql_repo_payload(payload, response_name="pull request progress lookup")
+            for pr in chunk:
+                if (raw := repo.get(f"pr_{pr.number}")) is not None:
+                    progress = _validate_model(
+                        raw,
+                        model=_GraphqlPRProgress,
+                        error_context=f"GitHub returned invalid progress for #{pr.number}",
+                    )
+                    results[pr.number] = (progress.approvals, progress.behind)
+
+        await _query_chunks(prs, query_chunk)
+        return results
 
     async def _branch_rules(self, branches: Sequence[str]) -> dict[str, _GraphqlBranchRules]:
         if not branches:

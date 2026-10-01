@@ -9,6 +9,7 @@ from dataclasses import dataclass, replace
 
 import jj_stack.ui as ui
 from jj_stack.bootstrap import CommandContext
+from jj_stack.concurrency import wait_for_read_tasks
 from jj_stack.errors import CliError, ErrorMessage, error_message
 from jj_stack.github.client import (
     GithubClient,
@@ -186,7 +187,7 @@ async def lookup_pr_lookups_async(
         lookups = await discover_pr_lookups(
             github_client=github_client, observations=observations
         )
-        prs: dict[int, GithubPR] = {}
+        reviewed: dict[int, GithubPR] = {}
         for observation in lookups.values():
             pr = observation.pr
             report = report_change(classify(observation))
@@ -195,25 +196,52 @@ async def lookup_pr_lookups_async(
                 and pr.state == "open"
                 and not (pr.is_draft or pr.is_queued or report.divergent)
                 and report.problem is None
-                and (verbose or pr.merge_state_status == "BLOCKED")
             ):
-                prs[pr.number] = pr
-        if not prs:
+                reviewed[pr.number] = pr
+        if not reviewed:
             return lookups
-        details: Mapping[int, GithubPRMergeDetails | str | None]
-        try:
-            details = await github_client.get_pr_merge_details(prs=tuple(prs.values()))
-        except GithubClientError as error:
-            details = dict.fromkeys(prs, error.user_facing_reason())
+        blocked = {
+            number: pr
+            for number, pr in reviewed.items()
+            if verbose or pr.merge_state_status == "BLOCKED"
+        }
+        details, progress = await _follow_up(github_client, reviewed=reviewed, blocked=blocked)
         for branch, observation in lookups.items():
-            if isinstance(pr := observation.pr, GithubPR) and pr.number in prs:
+            if not isinstance(pr := observation.pr, GithubPR) or pr.number not in reviewed:
+                continue
+            update: dict[str, object] = {}
+            if pr.number in progress:
+                update["approvals"], update["behind"] = progress[pr.number]
+            if pr.number in blocked or isinstance(details.get(pr.number), str):
                 evidence = details.get(pr.number)
                 if evidence is None:
                     evidence = "PR head or base changed during inspection; rerun the command"
-                lookups[branch] = replace(
-                    observation, pr=pr.model_copy(update={"merge_details": evidence})
-                )
+                update["merge_details"] = evidence
+            lookups[branch] = replace(observation, pr=pr.model_copy(update=update))
         return lookups
+
+
+async def _follow_up(
+    github_client: GithubClient,
+    *,
+    reviewed: Mapping[int, GithubPR],
+    blocked: Mapping[int, GithubPR],
+) -> tuple[Mapping[int, GithubPRMergeDetails | str | None], Mapping[int, tuple[int, int | None]]]:
+    """Merge details for blocked PRs, and approvals and trunk lag for every reviewed PR."""
+
+    async def merge_details() -> Mapping[int, GithubPRMergeDetails | None]:
+        if not blocked:
+            return {}
+        return await github_client.get_pr_merge_details(prs=tuple(blocked.values()))
+
+    details = asyncio.create_task(merge_details())
+    progress = asyncio.create_task(github_client.get_pr_progress(prs=tuple(reviewed.values())))
+    try:
+        await wait_for_read_tasks(details, progress)
+    except GithubClientError as error:
+        # Either lookup failing leaves the report incomplete, as a failed details lookup did.
+        return dict.fromkeys(reviewed, error.user_facing_reason()), {}
+    return details.result(), progress.result()
 
 
 async def discover_pr_lookups(

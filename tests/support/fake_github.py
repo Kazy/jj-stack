@@ -2006,6 +2006,13 @@ def _graphql_repo_payload(
             payload[alias] = None
             continue
         graphql_payload = _graphql_pr_payload(pr=pr, repo=repo)
+        landing = repo.ref_target(repo.landing_branch(pr))
+        if "compare(" in query and graphql_payload.get("headRef") and landing is not None:
+            behind = repo._run_backing_git("rev-list", "--count", f"{pr.head_sha}..{landing}")
+            graphql_payload["headRef"] = {
+                "name": pr.head_ref,
+                "compare": {"aheadBy": int(behind)},
+            }
         if "comments(" in query:
             graphql_payload["comments"] = {
                 "nodes": [
@@ -2148,6 +2155,9 @@ def _graphql_branch_targets_by_suffix(
 def _graphql_pr_payload(*, pr: FakeGithubPR, repo: FakeGithubRepo) -> dict[str, object]:
     payload = pr.to_graphql_payload(repo)
     payload["reviewDecision"] = _graphql_review_decision(repo, pr.number)
+    payload["latestOpinionatedReviews"] = {
+        "nodes": _latest_opinionated_review_payloads(repo, pr.number)
+    }
     in_stack = repo.stack_number_for_pr(pr.number) is not None
     payload["stack"] = {"baseRefName": repo.landing_branch(pr)} if in_stack else None
     if pr.merge_state_status is None and repo.requirements(pr):

@@ -46,6 +46,7 @@ from jj_stack.stack.change_state import (
     ChangeObservation,
     ChangeState,
     OrphanedRecord,
+    WithPR,
     enumerate_orphaned_records,
 )
 from jj_stack.stack.divergence import divergence_recovery_hint
@@ -54,6 +55,7 @@ from jj_stack.stack.preparation import PreparedLocalStack
 from jj_stack.stack.repo import observe_repo_paths
 from jj_stack.stack.reporting import (
     report_change,
+    stack_behind,
     status_label,
     submittable_edits,
 )
@@ -400,20 +402,24 @@ def _status_fragments(
         fragments.append(ui.semantic_text("GitHub unavailable", "warning", "heading"))
 
     reports = tuple(report_change(state) for state in states)
+    judged = [report.ready for report in reports if report.ready is not None]
+    if judged:
+        fragments.append(f"{sum(judged)} ready")
+    if (
+        behind := stack_behind(state.pr for state in states if isinstance(state, WithPR))
+    ) is not None:
+        count, branch = behind
+        fragments.append(t"{count} behind {ui.bookmark(branch)}")
     counts = Counter(report.status for report in reports)
-    # Unsubmitted changes have their own local stack rows.
+    # Unsubmitted changes have their own local stack rows; readiness covers open and approved.
     for status, count in counts.items():
-        if status not in {"unsubmitted", "submitted"}:
-            label = status_label(status, count=count)
-            if status == "approved" and count == 1 and len(reports) > 1:
-                label = t"1 {label}"
-            fragments.append(label)
+        if status not in {"unsubmitted", "submitted", "open", "approved"}:
+            fragments.append(status_label(status, count=count))
 
     check_statuses = {report.checks for report in reports if report.problem is None}
     for rollup_status, labels in (
         ("failed", ("warning", "heading")),
         ("pending", ("hint", "heading")),
-        ("passed", ("hint", "heading")),
     ):
         if rollup_status in check_statuses:
             fragments.append(ui.semantic_text(f"checks {rollup_status}", *labels))

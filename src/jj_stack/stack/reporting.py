@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Literal
 
@@ -64,6 +64,9 @@ class ChangeReport:
     needs_submit: bool
     checks: CheckRollupStatus | None
     merge_warnings: tuple[str, ...]
+    # Whether GitHub would merge the open PR now; None while it has no answer.
+    ready: bool | None
+    approvals: int | None
     reason: ui.Message | None
     repair: ui.Message | None
 
@@ -132,6 +135,8 @@ def report_change(state: ChangeState) -> ChangeReport:
             if isinstance(state, WithPR) and state.pr.state == "open"
             else ()
         ),
+        ready=_ready(state.pr) if isinstance(state, WithPR) and problem is None else None,
+        approvals=state.pr.approvals if isinstance(state, WithPR) else None,
         reason=state.reason if isinstance(state, Stop) else None,
         repair=state.repair if isinstance(state, Stop) else None,
     )
@@ -147,6 +152,33 @@ def submittable_edits(reports: Mapping[ChangeId, ChangeReport]) -> tuple[ChangeI
     if blocked:
         return ()
     return tuple(change_id for change_id, report in reports.items() if report.needs_submit)
+
+
+def stack_behind(prs: Iterable[GithubPR | None]) -> tuple[int, str] | None:
+    """How many commits the landing branch has that the stack's bottom PR lacks, and its name."""
+
+    for pr in prs:
+        if pr is not None and pr.behind:
+            return pr.behind, pr.stack_base_ref or pr.base.ref
+    return None
+
+
+def approval_count(count: int) -> str:
+    return f"{count} approval{'' if count == 1 else 's'}"
+
+
+READY_MARK = ui.semantic_text("✓", "signature status good")
+NOT_READY_MARK = ui.semantic_text("✗", "error heading")
+
+
+def _ready(pr: GithubPR) -> bool | None:
+    if pr.state != "open" or pr.is_draft or pr.is_queued:
+        return None
+    if pr.merge_state_status in {"CLEAN", "HAS_HOOKS", "UNSTABLE"}:
+        return True
+    if pr.merge_state_status in {"BLOCKED", "BEHIND", "DIRTY"}:
+        return False
+    return None
 
 
 def _pr_status(pr: GithubPR) -> ReportStatus:

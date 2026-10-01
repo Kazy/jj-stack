@@ -28,8 +28,11 @@ jj-stack merge <head-change-id>
 that their PR branches and pull requests have not moved unexpectedly. GitHub decides whether
 checks, approvals, conflicts, and repo rules allow the merge.
 
-`jj-stack list` and `jj-stack view` show review decisions, checks, and specific merge warnings.
-`needs review` means GitHub still requires a review.
+`jj-stack view` marks each open pull request with ✓ when GitHub would merge it now and ✗ when
+GitHub blocks it, followed by its approvals, checks, and specific merge warnings. `needs review`
+means GitHub still requires a review. A last line says how many commits the stack is behind its
+base branch. `jj-stack list` summarizes each stack, such as `1 ready, 82 behind main, unresolved
+review threads`.
 
 To inspect unresolved review threads and failed or pending checks, including links, run:
 

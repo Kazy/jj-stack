@@ -38,7 +38,7 @@ def test_status_explains_hidden_blockers_with_one_batched_followup(
     # Real GitHub PRs #382-385 in voxel-ai/jj-stack-native-stacks-test establish that
     # review-only, missing-check, and unresolved-thread cases share BLOCKED/SUCCESS. Only trunk
     # has rules, and GitHub applies them to PR #2 as well (live PR #387). Under a ruleset GitHub
-    # gives PR #2 no review decision, so only PR #1 reports one.
+    # gives PR #2 no review decision, so only PR #1 reports needing review.
     repo, fake_repo = init_fake_github_repo_with_submitted_stack(tmp_path, size=2)
     config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
     requirements = fake_repo.branch_rules if ruleset else fake_repo.branch_protection
@@ -75,7 +75,8 @@ def test_status_explains_hidden_blockers_with_one_batched_followup(
     assert_json_output_matches_schema(payload, "list")
     row = payload["rows"][0]
     assert batches == [(1, 2)]
-    assert ("needs review, open" if ruleset else "2 need review") in row["status"]
+    assert "0 ready" in row["status"]
+    assert ("needs review" if ruleset else "2 need review") in row["status"]
     assert "missing required check: deploy" in row["status"]
     assert "unresolved review threads" in row["status"]
     assert "merge blocked" not in row["status"]
@@ -100,7 +101,7 @@ def test_status_explains_hidden_blockers_with_one_batched_followup(
     fake_repo.prs[1].merge_checks.update(deploy="SUCCESS", build="FAILURE")
     assert run_main(repo, config_path, "list", "--json") == 0
     row = json.loads(capsys.readouterr().out)["rows"][0]
-    assert ("1 approved, open" if ruleset else "2 approved") in row["status"]
+    assert "0 ready" in row["status"]
     assert "missing required check" not in row["status"]
     assert "merge check failure: build" in row["status"]
     assert all(change["pr"]["checks"] == "passed" for change in row["changes"])
@@ -116,7 +117,7 @@ def test_status_explains_hidden_blockers_with_one_batched_followup(
         "UNSTABLE",
         "CLEAN",
     ]
-    assert ("1 approved, open" if ruleset else "2 approved") in row["status"]
+    assert "2 ready" in row["status"]
     assert "missing required check" not in row["status"]
     assert "unresolved review threads" not in row["status"]
 
@@ -353,7 +354,7 @@ def test_list_inventories_paths_that_share_a_submitted_prefix(
     assert current_paths == {(shared.change_id, right.change_id)}
 
 
-def test_list_reports_partial_approval_for_ready_prefix_only(
+def test_list_counts_ready_prs_in_a_partially_approved_stack(
     tmp_path,
     monkeypatch,
     capsys,
@@ -374,7 +375,7 @@ def test_list_reports_partial_approval_for_ready_prefix_only(
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "1 approved, needs review, checks failed" in captured.out
+    assert "1 ready, needs review, checks failed" in captured.out
 
 
 def test_list_omits_wholly_untracked_local_stacks(

@@ -166,7 +166,7 @@ current stack. It has its own `change_id`, `branch`, and optional `pr`, without 
       "head_change_id": "zvlyxwvksmry...",
       "current": true,
       "subject": "add json output",
-      "status": "1 approved, open, checks pending",
+      "status": "1 ready, checks pending",
       "changes": [
         {
           "change_id": "rlvmnowlqpsu...",
@@ -214,7 +214,7 @@ current stack. It has its own `change_id`, `branch`, and optional `pr`, without 
 when `@` is an empty change above it. Other stack rows omit the field. To locate `@` itself, look
 for `current: true` on an individual change.
 
-A stack row's `status`, such as `1 approved, open, checks pending`, is a human-readable
+A stack row's `status`, such as `1 ready, checks pending`, is a human-readable
 summary. Its wording can change. Scripts should inspect the individual changes' documented
 `status` values, even for a stack with only one change. An orphan row always uses
 `"status": "orphan"`.

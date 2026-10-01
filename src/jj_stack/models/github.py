@@ -151,6 +151,10 @@ class GithubPR(BaseModel):
     merge_commit_sha: CommitId | None = None
     merge_state_status: str | None = None
     merge_details: GithubPRMergeDetails | str | None = None
+    # Approvals from reviewers with write access, when looked up.
+    approvals: int | None = None
+    # How many commits the landing branch has that this PR's head lacks, when looked up.
+    behind: int | None = None
     merged_at: str | None = None
     node_id: str
     number: int

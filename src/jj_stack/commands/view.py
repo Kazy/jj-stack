@@ -55,7 +55,12 @@ from jj_stack.jj.client import (
 from jj_stack.stack.divergence import divergence_recovery_hint
 from jj_stack.stack.preparation import PreparedLocalStack, prepare_local_stack
 from jj_stack.stack.reporting import (
+    NOT_READY_MARK,
+    READY_MARK,
+    ChangeReport,
+    approval_count,
     report_change,
+    stack_behind,
     status_label,
     submittable_edits,
 )
@@ -401,6 +406,10 @@ def _render_prepared_status(
             prerendered_blocks[prepared_status.stack.base_parent.commit_id],
         )
     )
+    if (behind := stack_behind(change.pr for change in reversed(result.changes))) is not None:
+        count, branch = behind
+        commits = "commit" if count == 1 else "commits"
+        _emit_lines((t"The stack is {count} {commits} behind {ui.bookmark(branch)}.",))
     _emit_lines(
         render_status_advisory_lines(
             result=result,
@@ -738,18 +747,23 @@ def _format_status_summary(
         pr_label = format_pr_label(
             pr.number, is_draft=pr.state == "open" and pr.is_draft, url=pr.html_url
         )
+        details: list[ui.Message] = []
         if report.needs_sync:
             summary: ui.Message = t"{pr_label} merged, sync needed"
-        elif report.lifecycle in {"open", "draft"}:
-            summary = pr_label
-        elif report.lifecycle == "merged":
-            summary = t"{pr_label} merged"
+        elif report.lifecycle in {"open", "approved", "changes_requested", "review_required"}:
+            summary = _open_pr_label(pr_label, report)
+            details.extend(_review_details(report))
+        elif report.lifecycle in {"draft", "merged"}:
+            summary = pr_label if report.lifecycle == "draft" else t"{pr_label} merged"
         else:
             summary = t"{pr_label} {status_label(report.lifecycle)}"
         if report.checks is not None:
-            summary = t"{summary}, checks {report.checks}"
-        for warning in report.merge_warnings:
-            summary = t"{summary}, {ui.semantic_text(warning, 'warning', 'heading')}"
+            details.append(f"checks {report.checks}")
+        details.extend(
+            ui.semantic_text(warning, "warning", "heading") for warning in report.merge_warnings
+        )
+        if details:
+            summary = t"{summary}: {ui.join(lambda detail: detail, details)}"
     elif change.tracked is not None:
         summary = format_pr_label(
             change.tracked.pr_identity.pr_number, prefix="saved ", repo=repo
@@ -761,6 +775,24 @@ def _format_status_summary(
     if report.divergent:
         summary = t"{summary}, {status_label('divergent')}"
     return summary
+
+
+def _open_pr_label(pr_label: ui.Message, report: ChangeReport) -> ui.Message:
+    if report.ready is None:
+        return pr_label
+    return t"{READY_MARK if report.ready else NOT_READY_MARK} {pr_label}"
+
+
+def _review_details(report: ChangeReport) -> tuple[ui.Message, ...]:
+    """GitHub's call when it wants more review, else the approval count, else its own verdict."""
+
+    if report.lifecycle in {"changes_requested", "review_required"}:
+        return (status_label(report.lifecycle),)
+    if report.approvals:
+        return (approval_count(report.approvals),)
+    if report.approvals is None and report.lifecycle == "approved":
+        return (status_label("approved"),)
+    return ()
 
 
 def _emit_lines(
