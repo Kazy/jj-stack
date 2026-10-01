@@ -411,7 +411,9 @@ def test_list_does_not_extend_through_undescribed_working_copy(
     assert exit_code == 0
     assert f"@ {feature_change_id[:8]}" in captured.out
     assert "feature 1" in captured.out
-    assert "1 change" in captured.out
+    # One change with one PR: a change count would mean the stack reached the working copy.
+    assert "PR 1" in captured.out
+    assert "changes" not in captured.out
 
 
 def test_list_extends_through_another_workspaces_described_working_copy(

@@ -1,7 +1,8 @@
 """List the stacks `jj-stack` is tracking in this local repo.
 
-Each row shows the head change ID, stack size, PR state, and head description. Stacks without
-any submitted changes and stacks that exist only on GitHub are not listed.
+Each row shows the head change ID, the stack's PRs, PR state, and head description. The change
+count appears too when the stack has changes without PRs. Stacks without any submitted changes
+and stacks that exist only on GitHub are not listed.
 
 Orphaned PRs are listed separately: their local changes are no longer in any stack. The orphan
 rows show saved PR links without checking their current GitHub state. To close them and remove
@@ -68,8 +69,7 @@ class StackRow:
     current_change_ids: frozenset[ChangeId]
     head_change_id: ChangeId
     incomplete: bool
-    prs: ui.Message
-    size: int
+    size: ui.Message
     state: ui.Message
     subject: str
 
@@ -358,8 +358,7 @@ def _build_row(
         ),
         head_change_id=stack.head.change_id,
         incomplete=result.incomplete,
-        prs=_format_pr_summary(changes, repo=github_repo),
-        size=len(stack.changes),
+        size=_format_size(len(stack.changes), changes, repo=github_repo),
         state=state,
         subject=stack.head.subject,
     )
@@ -443,12 +442,27 @@ def _pr_references_from_changes(
     return tuple(references.items())
 
 
-def _format_pr_summary(
+def _format_size(
+    size: int,
     changes: tuple[StackStatusChange, ...],
     *,
     repo: GithubRepoAddress | None,
 ) -> ui.Message:
+    """Count the changes only when they are not one PR each."""
+
     references = _pr_references_from_changes(changes)
+    counted = f"{size} {'change' if size == 1 else 'changes'}"
+    if not references:
+        return counted
+    prs = _format_pr_summary(references, repo=repo)
+    return prs if len(references) == size else (f"{counted}, ", prs)
+
+
+def _format_pr_summary(
+    references: tuple[tuple[int, str | None], ...],
+    *,
+    repo: GithubRepoAddress | None,
+) -> ui.Message:
     if len(references) == 1:
         number, url = references[0]
         return format_pr_label(
@@ -472,8 +486,7 @@ def _stack_table(
     stack_table_rows = [
         (
             f"{'@ ' if row.current else ''}{rendered_change_ids[row.head_change_id]}",
-            f"{row.size} {'change' if row.size == 1 else 'changes'}",
-            row.prs,
+            row.size,
             row.state,
             t"{row.subject}",
         )
@@ -483,7 +496,6 @@ def _stack_table(
         stack_table_rows.append(
             (
                 rendered_change_ids[orphan.change_id],
-                "orphan",
                 orphan.pr_label,
                 orphan.state,
                 t"{orphan.subject}",
@@ -493,7 +505,6 @@ def _stack_table(
         columns=(
             ui.TableColumn("head", no_wrap=True),
             ui.TableColumn("size", no_wrap=True),
-            ui.TableColumn("PRs", no_wrap=True),
             ui.TableColumn("state"),
             ui.TableColumn("description"),
         ),
