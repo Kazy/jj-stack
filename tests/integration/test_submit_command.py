@@ -2141,14 +2141,28 @@ def test_submit_sends_github_stack_rewrites_to_sync_in_one_error(
                 contents=f"feature {number} with a suggestion\n",
                 message="Apply suggestions from code review",
             )
+    state_store = TrackingStore.for_repo(repo)
+    state_before = state_store.load()
     refs_before = remote_refs(fake_repo.git_dir)
+
+    def pr_fields() -> dict[int, tuple[object, ...]]:
+        return {
+            number: (pr.base_ref, pr.head_ref, pr.state, pr.merged_at, pr.title, pr.body)
+            for number, pr in fake_repo.prs.items()
+        }
+
+    prs_before = pr_fields()
+    fake_repo.pr_events.clear()
 
     exit_code = run_main(repo, config_path, "submit", head)
     captured = capsys.readouterr()
 
     assert exit_code == 1
     unwrapped = " ".join(captured.err.split())
+    assert state_store.load() == state_before
     assert remote_refs(fake_repo.git_dir) == refs_before
+    assert pr_fields() == prs_before
+    assert fake_repo.pr_events == []
     assert unwrapped.count("Error:") == 1
     if drift == "teammate_push":
         # Each PR keeps its own repair command, and the rerun hint appears once.
@@ -2165,68 +2179,6 @@ def test_submit_sends_github_stack_rewrites_to_sync_in_one_error(
     assert [fake_repo.prs[number].head_sha for number in (2, 3)] == [
         change.commit_id for change in local
     ]
-
-
-def test_submit_fails_closed_when_saved_remote_branch_drifted_externally(
-    tmp_path: Path,
-    monkeypatch,
-    capsys,
-) -> None:
-    repo, fake_repo = init_fake_github_repo_with_submitted_stack(tmp_path, size=3)
-    config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
-
-    stack = selected_stack(repo)
-    middle_change_id = stack.changes[1].change_id
-    top_change_id = stack.changes[2].change_id
-    state_store = TrackingStore.for_repo(repo)
-    initial_state = state_store.load()
-    middle_bookmark = initial_state.prs[middle_change_id].pr_identity.head_ref
-    top_target = initial_state.prs[top_change_id].submitted_baseline.commit_id
-
-    run_command(
-        [
-            "git",
-            "--git-dir",
-            str(fake_repo.git_dir),
-            "update-ref",
-            f"refs/heads/{middle_bookmark}",
-            top_target,
-        ],
-        fake_repo.git_dir.parent,
-    )
-    drifted_refs = remote_refs(fake_repo.git_dir)
-    prs_before = {
-        number: (
-            pr.base_ref,
-            pr.head_ref,
-            pr.state,
-            pr.merged_at,
-            pr.title,
-            pr.body,
-        )
-        for number, pr in fake_repo.prs.items()
-    }
-    fake_repo.pr_events.clear()
-
-    exit_code = run_main(repo, config_path, "submit", middle_change_id)
-    captured = capsys.readouterr()
-
-    assert exit_code == 1
-    assert "matches neither this change" in captured.err
-    assert state_store.load() == initial_state
-    assert remote_refs(fake_repo.git_dir) == drifted_refs
-    assert {
-        number: (
-            pr.base_ref,
-            pr.head_ref,
-            pr.state,
-            pr.merged_at,
-            pr.title,
-            pr.body,
-        )
-        for number, pr in fake_repo.prs.items()
-    } == prs_before
-    assert fake_repo.pr_events == []
 
 
 def test_submit_accepts_stack_forked_from_trunk_ancestor(
