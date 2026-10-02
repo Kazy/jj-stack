@@ -160,7 +160,11 @@ def test_github_client_caps_and_announces_a_long_rate_limit_wait(
             )
         return httpx2.Response(
             200,
-            json={"default_branch": "main", "full_name": "octo-org/stacked-prs"},
+            json={
+                "default_branch": "main",
+                "full_name": "octo-org/stacked-prs",
+                "node_id": "R_1",
+            },
             request=request,
         )
 
@@ -193,6 +197,7 @@ def test_github_client_retries_secondary_rate_limits_without_retry_after() -> No
             json={
                 "default_branch": "main",
                 "full_name": "octo-org/stacked-prs",
+                "node_id": "R_1",
             },
             request=request,
         )
@@ -251,7 +256,7 @@ def test_github_client_rejects_an_unusable_success_response(body: str, reason: s
     ("base", "body", "title", "expected_payload"),
     (
         (None, "new body", "new title", {"body": "new body", "title": "new title"}),
-        ("main", "", "new title", {"base": "main", "body": "", "title": "new title"}),
+        ("main", "", "new title", {"baseRefName": "main", "body": "", "title": "new title"}),
     ),
 )
 def test_github_client_sends_only_supplied_pr_updates(
@@ -261,26 +266,27 @@ def test_github_client_sends_only_supplied_pr_updates(
     expected_payload: dict[str, str],
 ) -> None:
     def handler(request: httpx2.Request) -> httpx2.Response:
-        assert json.loads(request.content.decode("utf-8")) == expected_payload
+        variables = json.loads(request.content)["variables"]
+        assert variables == {"input": {"pullRequestId": "PR_7", **expected_payload}}
+        pr = {
+            "baseRefName": base or "old-base",
+            "body": body or "",
+            "headRefName": "jj-stack/feature",
+            "headRefOid": "head-commit",
+            "id": "PR_7",
+            "number": 7,
+            "state": "OPEN",
+            "title": title or "old title",
+            "url": "https://github.test/octo-org/stacked-prs/pull/7",
+        }
         return httpx2.Response(
-            200,
-            json={
-                "base": {"ref": base or "old-base"},
-                "body": body or "",
-                "head": {"ref": "jj-stack/feature", "sha": "head-commit"},
-                "html_url": "https://github.test/octo-org/stacked-prs/pull/7",
-                "node_id": "PR_7",
-                "number": 7,
-                "state": "open",
-                "title": title or "old title",
-            },
-            request=request,
+            200, json={"data": {"updatePullRequest": {"pullRequest": pr}}}, request=request
         )
 
     async def run_test() -> None:
         async with _github_client(handler) as client:
             await client.update_pr(
-                pr_number=7,
+                pr_id="PR_7",
                 base=base,
                 body=body,
                 title=title,
@@ -938,14 +944,13 @@ def test_github_client_filters_batched_head_lookup_results_to_repo_owner() -> No
                 "message": "Validation Failed",
                 "errors": [
                     {
-                        "resource": "PullRequest",
-                        "code": "custom",
-                        "message": "A pull request already exists for octo-org:jj-stack/x.",
+                        "resource": "Label",
+                        "code": "invalid",
+                        "message": "Label x is not a valid name.",
                     }
                 ],
             },
-            "request failed (GitHub 422: Validation Failed: A pull request already exists for "
-            "octo-org:jj-stack/x.)",
+            "request failed (GitHub 422: Validation Failed: Label x is not a valid name.)",
             id="quotes-githubs-json-explanation",
         ),
         pytest.param(
@@ -966,7 +971,7 @@ def test_github_client_quotes_githubs_own_explanation_for_a_refusal(
 
     async def run_test() -> None:
         async with _github_client(handler) as client:
-            await client.create_pr(base="main", body="", head="jj-stack/x", title="x")
+            await client.add_labels(issue_number=1, labels=["x"])
 
     with pytest.raises(GithubClientError) as raised:
         asyncio.run(run_test())

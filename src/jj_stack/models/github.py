@@ -1,15 +1,30 @@
 """GitHub API response models."""
 
-from collections.abc import Mapping
-from typing import Literal, Self
+from typing import Literal, get_args
 
-from pydantic import AliasPath, BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    AliasPath,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from jj_stack.identifiers import CommitId
 from jj_stack.models.github_details import GithubMergeQueueEntry, GithubPRMergeDetails
 
 CheckRollupStatus = Literal["failed", "passed", "pending"]
 PRState = Literal["open", "closed", "merged"]
+ReviewDecision = Literal["approved", "changes_requested", "review_required"]
+
+_CHECK_ROLLUP_STATUSES: dict[str, CheckRollupStatus] = {
+    "ERROR": "failed",
+    "EXPECTED": "pending",
+    "FAILURE": "failed",
+    "PENDING": "pending",
+    "SUCCESS": "passed",
+}
 
 
 class GithubRepoPermissions(BaseModel):
@@ -30,6 +45,7 @@ class GithubRepo(BaseModel):
     allow_squash_merge: bool | None = None
     default_branch: str | None
     full_name: str
+    node_id: str
     permissions: GithubRepoPermissions | None = None
 
 
@@ -127,20 +143,23 @@ class GithubStackMergeSubmission(BaseModel):
 
 
 class GithubPR(BaseModel):
-    """Pull request fields with one lifecycle across REST and GraphQL responses."""
+    """Pull request fields read from GitHub's GraphQL API."""
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
     base: GithubBranchRef
     body: str | None = None
-    check_rollup_status: CheckRollupStatus | None = None
+    check_rollup_status: CheckRollupStatus | None = Field(
+        default=None, validation_alias=AliasPath("statusCheckRollup", "state")
+    )
     head: GithubPRHead
-    # GitHub reports a null `headRef` once the head branch is deleted; REST payloads say
-    # nothing, so they keep the safe default.
-    head_branch_exists: bool = True
-    html_url: str
-    is_draft: bool = Field(default=False, alias="draft")
-    merge_queue_entry: GithubMergeQueueEntry | None = None
+    # GitHub reports a null `headRef` once the head branch is deleted.
+    head_branch_exists: bool = Field(default=True, validation_alias="headRef")
+    html_url: str = Field(validation_alias="url")
+    is_draft: bool = Field(default=False, validation_alias="isDraft")
+    merge_queue_entry: GithubMergeQueueEntry | None = Field(
+        default=None, validation_alias="mergeQueueEntry"
+    )
     queue_removal_reason: str | None = Field(
         default=None, validation_alias=AliasPath("timelineItems", "nodes", 0, "reason")
     )
@@ -148,17 +167,21 @@ class GithubPR(BaseModel):
         default=None,
         validation_alias=AliasPath("timelineItems", "nodes", 0, "beforeCommit", "oid"),
     )
-    merge_commit_sha: CommitId | None = None
-    merge_state_status: str | None = None
+    merge_commit_sha: CommitId | None = Field(
+        default=None, validation_alias=AliasPath("mergeCommit", "oid")
+    )
+    merge_state_status: str | None = Field(default=None, validation_alias="mergeStateStatus")
     merge_details: GithubPRMergeDetails | str | None = None
     # Approvals from reviewers with write access, when looked up.
     approvals: int | None = None
     # How many commits the landing branch has that this PR's head lacks, when looked up.
     behind: int | None = None
-    merged_at: str | None = None
-    node_id: str
+    merged_at: str | None = Field(default=None, validation_alias="mergedAt")
+    node_id: str = Field(validation_alias="id")
     number: int
-    review_decision: str | None = None
+    review_decision: ReviewDecision | None = Field(
+        default=None, validation_alias="reviewDecision"
+    )
     # The branch the PR's GitHub stack lands on, when the PR is in one.
     stack_base_ref: str | None = Field(
         default=None, validation_alias=AliasPath("stack", "baseRefName")
@@ -170,52 +193,57 @@ class GithubPR(BaseModel):
     def is_queued(self) -> bool:
         return self.merge_queue_entry is not None
 
-    @model_validator(mode="after")
-    def _normalize_merged_state(self) -> Self:
-        if self.state == "closed" and self.merged_at is not None:
-            self.state = "merged"
-        return self
-
     @model_validator(mode="before")
     @classmethod
-    def _normalize_graphql_payload(cls, value: object) -> object:
+    def _nest_graphql_refs(cls, value: object) -> object:
+        # GraphQL reports the branch names and head commit as top-level fields; a model built
+        # by field name already has them nested.
         if not isinstance(value, dict) or "baseRefName" not in value:
             return value
-
-        payload: dict[str, object] = {
-            "base": {"ref": value.get("baseRefName")},
-            "body": value.get("body"),
-            "check_rollup_status": _normalize_graphql_check_rollup(
-                value.get("statusCheckRollup")
-            ),
-            "draft": value.get("isDraft", False),
-            "head": {
-                "label": _graphql_head_label(value),
-                "ref": value.get("headRefName"),
-                "sha": value.get("headRefOid"),
-            },
-            "head_branch_exists": value.get("headRef", True) is not None,
-            "html_url": value.get("url"),
-            "merge_queue_entry": value.get("mergeQueueEntry"),
-            "timelineItems": value.get("timelineItems"),
-            "merge_commit_sha": _graphql_merge_commit_oid(value.get("mergeCommit")),
-            "merge_state_status": value.get("mergeStateStatus"),
-            "merged_at": value.get("mergedAt"),
-            "node_id": value.get("id"),
-            "number": value.get("number"),
-            "review_decision": _normalize_graphql_review_decision(value.get("reviewDecision")),
-            "stack": value.get("stack"),
-            "state": value.get("state", ""),
-            "title": value.get("title"),
+        head = _GraphqlHead.model_validate(value)
+        label = None if head.owner is None else f"{head.owner.login}:{head.ref}"
+        return {
+            **value,
+            "base": {"ref": value["baseRefName"]},
+            "head": {"label": label, "ref": head.ref, "sha": head.sha},
         }
-        if isinstance(payload["state"], str):
-            payload["state"] = payload["state"].lower()
-        return payload
+
+    @field_validator("check_rollup_status", mode="before")
+    @classmethod
+    def _normalize_check_rollup(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        status = _CHECK_ROLLUP_STATUSES.get(value, value)
+        # GitHub may add states; an unknown one reads as no status rather than a failure.
+        return status if status in get_args(CheckRollupStatus) else None
+
+    @field_validator("head_branch_exists", mode="before")
+    @classmethod
+    def _head_ref_exists(cls, value: object) -> object:
+        return value if isinstance(value, bool) else value is not None
+
+    @field_validator("review_decision", mode="before")
+    @classmethod
+    def _normalize_review_decision(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        decision = value.lower()
+        return decision if decision in get_args(ReviewDecision) else None
+
+    @field_validator("state", mode="before")
+    @classmethod
+    def _lowercase_state(cls, value: object) -> object:
+        return value.lower() if isinstance(value, str) else value
 
 
-def _graphql_merge_commit_oid(value: object) -> str | None:
-    oid = value.get("oid") if isinstance(value, dict) else None
-    return oid if isinstance(oid, str) else None
+class _GraphqlHeadOwner(BaseModel):
+    login: str
+
+
+class _GraphqlHead(BaseModel):
+    ref: str = Field(alias="headRefName")
+    sha: CommitId = Field(alias="headRefOid")
+    owner: _GraphqlHeadOwner | None = Field(default=None, alias="headRepositoryOwner")
 
 
 class GithubPRReviewUser(BaseModel):
@@ -252,62 +280,3 @@ class GithubPRRevision(BaseModel):
     commit_id: CommitId
     is_current: bool
     version: int
-
-
-def _graphql_head_label(raw_pr: Mapping[str, object]) -> str | None:
-    try:
-        parts = _GraphqlHeadLabelParts.model_validate(raw_pr)
-    except ValidationError as error:
-        raise ValueError("GitHub pull request GraphQL response had invalid head data.") from error
-    if parts.head_repo_owner is None:
-        return None
-    return f"{parts.head_repo_owner.login}:{parts.head_ref_name}"
-
-
-class _GraphqlHeadRepoOwner(BaseModel):
-    login: str
-
-
-class _GraphqlHeadLabelParts(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    head_ref_name: str = Field(alias="headRefName")
-    head_repo_owner: _GraphqlHeadRepoOwner | None = Field(
-        default=None,
-        alias="headRepositoryOwner",
-    )
-
-
-def _normalize_graphql_review_decision(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    normalized = value.upper()
-    if normalized == "APPROVED":
-        return "approved"
-    if normalized == "CHANGES_REQUESTED":
-        return "changes_requested"
-    if normalized == "REVIEW_REQUIRED":
-        return "review_required"
-    return None
-
-
-class _GraphqlCheckRollup(BaseModel):
-    state: str
-
-
-def _normalize_graphql_check_rollup(value: object) -> CheckRollupStatus | None:
-    if value is None:
-        return None
-    try:
-        rollup = _GraphqlCheckRollup.model_validate(value)
-    except ValidationError as error:
-        message = "GitHub pull request GraphQL response had invalid check data."
-        raise ValueError(message) from error
-    normalized = rollup.state.upper()
-    if normalized == "SUCCESS":
-        return "passed"
-    if normalized in {"ERROR", "FAILURE"}:
-        return "failed"
-    if normalized in {"EXPECTED", "PENDING"}:
-        return "pending"
-    return None

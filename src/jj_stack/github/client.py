@@ -156,6 +156,14 @@ class _GraphqlPRConnection(BaseModel):
     nodes: tuple[GithubPR, ...]
 
 
+class _GraphqlNode(BaseModel):
+    id: str
+
+
+class _GraphqlPRMutationResult(BaseModel):
+    pull_request: GithubPR = Field(alias="pullRequest")
+
+
 class _GraphqlPageInfo(BaseModel):
     end_cursor: str | None = Field(default=None, alias="endCursor")
     has_next_page: bool = Field(default=False, alias="hasNextPage")
@@ -315,6 +323,7 @@ class GithubClient:
             "owner": repo.owner,
             "repo": repo.repo,
         }
+        self._repository_id: str | None = None
 
     @property
     def repo(self) -> GithubRepoAddress:
@@ -330,11 +339,15 @@ class GithubClient:
 
     async def get_repo(self) -> GithubRepo:
         response = await self._request("GET", self._repo_path)
-        return _validate_model(
+        repo = _validate_model(
             self._expect_json_payload(response, response_name="repo lookup"),
             model=GithubRepo,
             error_context="GitHub repo lookup response had invalid data",
         )
+        # Opening a pull request needs this ID; submit reads the repo first, so it costs no
+        # extra request there.
+        self._repository_id = repo.node_id
+        return repo
 
     async def get_branch_targets(
         self,
@@ -485,15 +498,10 @@ class GithubClient:
         *,
         pr_number: int,
     ) -> GithubPR:
-        response = await self._request(
-            "GET",
-            f"{self._repo_path}/pulls/{pr_number}",
-        )
-        return _validate_model(
-            self._expect_json_payload(response, response_name="pull request lookup"),
-            model=GithubPR,
-            error_context="GitHub pull request lookup response had invalid data",
-        )
+        pr = (await self.get_prs_by_numbers(pr_numbers=(pr_number,)))[pr_number]
+        if pr is None:
+            raise GithubClientError(f"GitHub has no pull request #{pr_number}.")
+        return pr
 
     async def get_prs_by_numbers(
         self,
@@ -597,21 +605,17 @@ class GithubClient:
         head: str,
         title: str,
     ) -> GithubPR:
-        response = await self._request(
-            "POST",
-            f"{self._repo_path}/pulls",
-            json={
-                "base": base,
+        return await self._pr_mutation(
+            "createPullRequest",
+            fields={
+                "baseRefName": base,
                 "body": body,
                 "draft": draft,
-                "head": head,
+                "headRefName": head,
+                "repositoryId": await self._get_repository_id(),
                 "title": title,
             },
-        )
-        return _validate_model(
-            self._expect_json_payload(response, response_name="pull request creation"),
-            model=GithubPR,
-            error_context="GitHub pull request creation response had invalid data",
+            response_name="pull request creation",
         )
 
     async def list_pr_reviews(
@@ -951,36 +955,57 @@ class GithubClient:
     async def update_pr(
         self,
         *,
-        pr_number: int,
+        pr_id: str,
         base: str | None = None,
         body: str | None = None,
         title: str | None = None,
     ) -> GithubPR:
-        fields = {"base": base, "body": body, "title": title}
-        response = await self._request(
-            "PATCH",
-            f"{self._repo_path}/pulls/{pr_number}",
-            json={name: value for name, value in fields.items() if value is not None},
-        )
-        return _validate_model(
-            self._expect_json_payload(response, response_name="pull request update"),
-            model=GithubPR,
-            error_context="GitHub pull request update response had invalid data",
+        fields = {"baseRefName": base, "body": body, "title": title}
+        return await self._pr_mutation(
+            "updatePullRequest",
+            fields={
+                "pullRequestId": pr_id,
+                **{name: value for name, value in fields.items() if value is not None},
+            },
+            response_name="pull request update",
         )
 
     async def set_pr_draft(self, *, pr_id: str, draft: bool) -> GithubPR:
-        mutation_name = "convertPullRequestToDraft" if draft else "markPullRequestReadyForReview"
-        response_name = (
-            "convert pull request to draft" if draft else "mark pull request ready for review"
+        return await self._pr_mutation(
+            "convertPullRequestToDraft" if draft else "markPullRequestReadyForReview",
+            fields={"pullRequestId": pr_id},
+            response_name=(
+                "convert pull request to draft" if draft else "mark pull request ready for review"
+            ),
         )
+
+    async def _get_repository_id(self) -> str:
+        if self._repository_id is None:
+            payload = await self._graphql_query(
+                _repo_graphql_query(operation_name="RepositoryId", selections="id"),
+                response_name="repo ID lookup",
+                variables=self._repo_variables,
+            )
+            self._repository_id = _validate_model(
+                _graphql_repo_payload(payload, response_name="repo ID lookup"),
+                model=_GraphqlNode,
+                error_context="GitHub repo ID lookup response had invalid data",
+            ).id
+        return self._repository_id
+
+    async def _pr_mutation(
+        self, mutation: str, *, fields: dict[str, object], response_name: str
+    ) -> GithubPR:
         payload = await self._graphql_query(
-            _pr_draft_mutation(mutation_name),
+            _pr_mutation_document(mutation),
             response_name=response_name,
-            variables={"pullRequestId": pr_id},
+            variables={"input": fields},
         )
-        return _graphql_mutation_pr_payload(
-            payload, mutation_name=mutation_name, response_name=response_name
-        )
+        return _validate_model(
+            payload.get(mutation),
+            model=_GraphqlPRMutationResult,
+            error_context=f"GitHub {response_name} response had invalid mutation data",
+        ).pull_request
 
     async def base_branch_uses_merge_queue(self, *, branch: str) -> bool:
         payload = await self._graphql_query(
@@ -1359,27 +1384,6 @@ def _graphql_repo_payload(
     return repo
 
 
-def _graphql_mutation_pr_payload(
-    payload: dict[str, object],
-    *,
-    mutation_name: str,
-    response_name: str,
-) -> GithubPR:
-    result = payload.get(mutation_name)
-    if not isinstance(result, dict):
-        raise GithubClientError(f"GitHub {response_name} response was missing mutation data.")
-    raw_pr = result.get("pullRequest")
-    if raw_pr is None:
-        raise GithubClientError(
-            f"GitHub {response_name} response was missing a pull request payload."
-        )
-    return _validate_model(
-        raw_pr,
-        model=GithubPR,
-        error_context=f"GitHub {response_name} response had invalid mutation data",
-    )
-
-
 def _prs_by_number_query(numbers: Sequence[int], *, merge_progress: bool) -> str:
     selections = "\n\n".join(
         _graphql_document(
@@ -1718,12 +1722,13 @@ def _pr_history_query(
     )
 
 
-def _pr_draft_mutation(mutation_name: str) -> str:
+def _pr_mutation_document(mutation: str) -> str:
+    operation = mutation[0].upper() + mutation[1:]
     return _with_pr_fields_fragment(
         _graphql_document(
             f"""
-            mutation SetPullRequestDraft($pullRequestId: ID!) {{
-              {mutation_name}(input: {{pullRequestId: $pullRequestId}}) {{
+            mutation {operation}($input: {operation}Input!) {{
+              {mutation}(input: $input) {{
                 pullRequest {{
                   ...PullRequestFields
                 }}

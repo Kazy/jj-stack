@@ -77,7 +77,7 @@ async def _retarget_pr_base_before_branch_push(
 ) -> None:
     try:
         await github_client.update_pr(
-            pr_number=pr.number,
+            pr_id=pr.node_id,
             base=trunk_branch,
         )
     except GithubClientError as error:

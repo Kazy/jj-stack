@@ -8,6 +8,9 @@ from pathlib import Path
 import httpx2
 import pytest
 
+from jj_stack.github.client import GithubClient, GithubClientError
+from jj_stack.github.resolution import GithubRepoAddress
+
 from ..support.fake_github import FakeGithubState, create_app
 from ..support.integration_helpers import (
     delete_remote_ref,
@@ -30,32 +33,37 @@ def test_fake_rejects_retargets_and_reopens_that_github_cannot_apply(tmp_path: P
     path = f"/repos/{fake.full_name}"
 
     async def exercise() -> None:
-        async with httpx2.AsyncClient(
-            base_url="https://api.github.test", transport=httpx2.ASGITransport(app=app)
-        ) as client:
-            response = await client.patch(f"{path}/pulls/1", json={"base": "landed"})
-            assert response.status_code == 422
+        transport = httpx2.ASGITransport(app=app)
+        async with (
+            httpx2.AsyncClient(base_url="https://api.github.test", transport=transport) as client,
+            GithubClient(
+                httpx2.AsyncClient(base_url="https://api.github.test", transport=transport),
+                repo=GithubRepoAddress(owner=fake.owner, repo=fake.name),
+            ) as github,
+        ):
+            with pytest.raises(GithubClientError):
+                await github.update_pr(pr_id=pr.node_id, base="landed")
             assert (pr.base_ref, pr.state, pr.merged_at) == ("main", "open", None)
 
             assert (await client.patch(f"{path}/issues/1", json={"state": "closed"})).is_success
-            response = await client.patch(f"{path}/pulls/1", json={"base": "landed"})
-            assert response.status_code == 422
+            with pytest.raises(GithubClientError):
+                await github.update_pr(pr_id=pr.node_id, base="landed")
             assert pr.base_ref == "main"
 
             for branch, commit in ((pr.head_ref, head), ("main", base)):
                 delete_remote_ref(fake, branch=branch)
                 response = await client.patch(f"{path}/issues/1", json={"state": "open"})
                 assert response.status_code == 422
-                payload = (await client.get(f"{path}/pulls/1")).json()
-                assert payload["state"] == "closed"
-                assert payload["head"]["sha"] == head
+                observed = await github.get_pr(pr_number=1)
+                assert observed.state == "closed"
+                assert observed.head.sha == head
                 update_remote_ref(fake, branch=branch, target=commit)
 
             assert (await client.patch(f"{path}/issues/1", json={"state": "open"})).is_success
             update_remote_ref(fake, branch="main", target=head)
-            payload = (await client.get(f"{path}/pulls/1")).json()
-            assert payload["merged_at"] is not None
-            assert payload["merge_commit_sha"] == head
+            observed = await github.get_pr(pr_number=1)
+            assert observed.merged_at is not None
+            assert observed.merge_commit_sha == head
             response = await client.patch(f"{path}/issues/1", json={"state": "open"})
             assert response.status_code == 422
 

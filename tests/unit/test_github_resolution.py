@@ -172,4 +172,5 @@ def _github_repo(default_branch: str) -> GithubRepo:
     return GithubRepo(
         default_branch=default_branch,
         full_name="octo-org/repo",
+        node_id="R_1",
     )

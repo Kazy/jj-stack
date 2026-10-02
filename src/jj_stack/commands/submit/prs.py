@@ -101,7 +101,7 @@ async def _sync_pr(
         pr_number = format_pr_number(pr.number, url=pr.html_url)
         pr = await _github_request(
             github_client.update_pr(
-                pr_number=pr.number,
+                pr_id=pr.node_id,
                 base=updates.base,
                 body=updates.body,
                 title=updates.title,

@@ -27,6 +27,7 @@ def _repo(
         allow_squash_merge=allow_squash_merge,
         default_branch="main",
         full_name="acme/widgets",
+        node_id="R_1",
     )
 
 
@@ -165,6 +166,7 @@ def test_merge_preconditions_name_a_closed_pull_request() -> None:
             change_id=change.change_id,
             commit_id=change.commit_id,
             identity=identity,
+            pr_node_id="PR_1",
         ),
     )
 

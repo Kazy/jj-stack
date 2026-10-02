@@ -145,7 +145,7 @@ async def execute_async_merge(
     if merge.resource is None and merge.target.base_ref != execution.trunk_branch:
         try:
             await github.update_pr(
-                pr_number=merge.target.identity.pr_number,
+                pr_id=merge.target.pr_node_id,
                 base=execution.trunk_branch,
             )
         except GithubClientError as error:

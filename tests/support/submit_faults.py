@@ -44,14 +44,14 @@ def install_submit_fault(
         async def update_pr(
             self,
             *,
-            pr_number,
+            pr_id,
             base=None,
             body=None,
             title=None,
         ):
             nonlocal failed
             pr = await super().update_pr(
-                pr_number=pr_number,
+                pr_id=pr_id,
                 base=base,
                 body=body,
                 title=title,

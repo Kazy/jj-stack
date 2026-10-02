@@ -316,6 +316,10 @@ class FakeGithubRepo:
     def full_name(self) -> str:
         return f"{self.owner}/{self.name}"
 
+    @property
+    def node_id(self) -> str:
+        return f"R_fake_{self.owner}_{self.name}"
+
     def landing_branch(self, pr: FakeGithubPR) -> str:
         stack_number = self.stack_number_for_pr(pr.number)
         if stack_number is None:
@@ -517,6 +521,7 @@ class FakeGithubRepo:
             "default_branch": self.default_branch,
             "delete_branch_on_merge": self.delete_branch_on_merge,
             "full_name": self.full_name,
+            "node_id": self.node_id,
             "permissions": {"push": self.push_permission},
         }
 
@@ -1263,32 +1268,9 @@ def _register_graphql_routes(app: FastAPI, fake_state: FakeGithubState) -> None:
             raw_variables = {}
         if not isinstance(raw_variables, dict):
             raise HTTPException(status_code=422, detail="Expected 'variables' to be an object.")
-        if "markPullRequestReadyForReview" in query:
-            pr_id = _require_graphql_variable(raw_variables, "pullRequestId")
-            pr, repo = _find_pr_by_node_id(
-                fake_state,
-                pr_id,
-            )
-            repo.refresh_pr_state(pr)
-            pr.is_draft = False
-            return {
-                "data": {
-                    "markPullRequestReadyForReview": {"pullRequest": pr.to_graphql_payload(repo)}
-                }
-            }
-        if "convertPullRequestToDraft" in query:
-            pr_id = _require_graphql_variable(raw_variables, "pullRequestId")
-            pr, repo = _find_pr_by_node_id(
-                fake_state,
-                pr_id,
-            )
-            repo.refresh_pr_state(pr)
-            pr.is_draft = True
-            return {
-                "data": {
-                    "convertPullRequestToDraft": {"pullRequest": pr.to_graphql_payload(repo)}
-                }
-            }
+        for mutation in _PR_MUTATIONS:
+            if f"{mutation}(input:" in query:
+                return _run_pr_mutation(fake_state, mutation, raw_variables.get("input"))
         owner = _require_graphql_variable(raw_variables, "owner")
         repo_name = _require_graphql_variable(raw_variables, "repo")
         repo = _get_repo(fake_state, owner, repo_name)
@@ -1321,85 +1303,6 @@ def _register_graphql_routes(app: FastAPI, fake_state: FakeGithubState) -> None:
 
 def _register_pr_routes(app: FastAPI, fake_state: FakeGithubState) -> None:
     """Register pull-request, issue, label, and review routes."""
-
-    @app.post("/repos/{owner}/{repo_name}/pulls", status_code=201)
-    async def create_pr(
-        owner: str,
-        repo_name: str,
-        payload: Annotated[dict[str, object], Body(...)],
-    ) -> dict[str, object]:
-        repo = _get_repo(fake_state, owner, repo_name)
-        title = _require_string(payload, "title")
-        head_ref = _require_string(payload, "head")
-        base_ref = _require_string(payload, "base")
-        body = _optional_string(payload, "body") or ""
-        draft = _optional_bool(payload, "draft") or False
-        _require_branch(repo, head_ref)
-        _require_branch(repo, base_ref)
-        pr = repo.create_pr(
-            base_ref=base_ref,
-            body=body,
-            draft=draft,
-            head_ref=head_ref,
-            title=title,
-        )
-        return pr.to_payload(repo)
-
-    @app.get("/repos/{owner}/{repo_name}/pulls/{pr_number}")
-    async def get_pr(
-        owner: str,
-        repo_name: str,
-        pr_number: int,
-    ) -> dict[str, object]:
-        repo = _get_repo(fake_state, owner, repo_name)
-        pr = repo.prs.get(pr_number)
-        if pr is None:
-            raise HTTPException(status_code=404, detail="Not Found")
-        repo.refresh_pr_state(pr)
-        return pr.to_payload(repo)
-
-    @app.patch("/repos/{owner}/{repo_name}/pulls/{pr_number}")
-    async def update_pr(
-        owner: str,
-        repo_name: str,
-        pr_number: int,
-        payload: Annotated[dict[str, object], Body(...)],
-    ) -> dict[str, object]:
-        repo = _get_repo(fake_state, owner, repo_name)
-        pr = repo.prs.get(pr_number)
-        if pr is None:
-            raise HTTPException(status_code=404, detail="Not Found")
-        if "base" in payload and repo.stack_number_for_pr(pr_number) is not None:
-            raise HTTPException(
-                status_code=422,
-                detail="A stacked pull request's base cannot be updated directly.",
-            )
-        repo.refresh_pr_state(pr)
-        title = _require_string(payload, "title") if "title" in payload else None
-        body = (_optional_string(payload, "body") or "") if "body" in payload else None
-        base_ref = _require_string(payload, "base") if "base" in payload else None
-        if base_ref is not None:
-            base_commit = _require_branch(repo, base_ref)
-            if pr.state != "open":
-                raise HTTPException(
-                    status_code=422,
-                    detail="Cannot change the base branch of a closed pull request.",
-                )
-            head_commit = repo.ref_target(pr.head_ref) or pr.head_sha
-            if repo.is_ancestor(head_commit, base_commit):
-                raise HTTPException(
-                    status_code=422, detail="There are no new commits between base and head."
-                )
-        if title is not None:
-            pr.title = title
-        if body is not None:
-            pr.body = body
-        if base_ref is not None:
-            repo.update_pr_base(
-                pr,
-                base_ref=base_ref,
-            )
-        return pr.to_payload(repo)
 
     @app.put("/repos/{owner}/{repo_name}/pulls/{pr_number}/merge-async")
     async def submit_stack_merge(
@@ -1658,6 +1561,84 @@ def _get_repo(state: FakeGithubState, owner: str, repo_name: str) -> FakeGithubR
     return repo
 
 
+_PR_MUTATIONS = (
+    "convertPullRequestToDraft",
+    "createPullRequest",
+    "markPullRequestReadyForReview",
+    "updatePullRequest",
+)
+
+
+class _MutationRefused(Exception):
+    """GitHub accepted the request but refused the change, reporting it as a GraphQL error."""
+
+
+def _run_pr_mutation(state: FakeGithubState, mutation: str, fields: object) -> dict[str, object]:
+    if not isinstance(fields, dict):
+        raise HTTPException(status_code=422, detail="Expected GraphQL variable 'input'.")
+    try:
+        pr, repo = _apply_pr_mutation(state, mutation, fields)
+    except _MutationRefused as refusal:
+        error = {"type": "UNPROCESSABLE", "path": [mutation], "message": str(refusal)}
+        return {"data": {mutation: None}, "errors": [error]}
+    return {"data": {mutation: {"pullRequest": pr.to_graphql_payload(repo)}}}
+
+
+def _apply_pr_mutation(
+    state: FakeGithubState, mutation: str, fields: dict[str, object]
+) -> tuple[FakeGithubPR, FakeGithubRepo]:
+    if mutation == "createPullRequest":
+        repo_id = _require_string(fields, "repositoryId")
+        repo = next((repo for repo in state.repos.values() if repo.node_id == repo_id), None)
+        if repo is None:
+            raise _MutationRefused(f"Could not resolve to a node with the global id {repo_id!r}.")
+        head_ref = _require_string(fields, "headRefName")
+        base_ref = _require_string(fields, "baseRefName")
+        for branch in (head_ref, base_ref):
+            if repo.ref_target(branch) is None:
+                raise _MutationRefused(f"Branch {branch!r} does not exist.")
+        pr = repo.create_pr(
+            base_ref=base_ref,
+            body=_optional_string(fields, "body") or "",
+            draft=_optional_bool(fields, "draft") or False,
+            head_ref=head_ref,
+            title=_require_string(fields, "title"),
+        )
+        return pr, repo
+    pr, repo = _find_pr_by_node_id(state, _require_string(fields, "pullRequestId"))
+    repo.refresh_pr_state(pr)
+    if mutation == "updatePullRequest":
+        _update_pr(repo, pr, fields)
+    else:
+        pr.is_draft = mutation == "convertPullRequestToDraft"
+    return pr, repo
+
+
+def _update_pr(repo: FakeGithubRepo, pr: FakeGithubPR, fields: dict[str, object]) -> None:
+    base_ref = _optional_string(fields, "baseRefName")
+    if base_ref is not None:
+        if repo.stack_number_for_pr(pr.number) is not None:
+            raise _MutationRefused(
+                "Cannot change the base branch because the pull request is part of a stack."
+            )
+        base_commit = repo.ref_target(base_ref)
+        if base_commit is None:
+            raise _MutationRefused(f"Branch {base_ref!r} does not exist.")
+        if pr.state != "open":
+            raise _MutationRefused("Cannot change the base branch of a closed pull request.")
+        if repo.is_ancestor(repo.ref_target(pr.head_ref) or pr.head_sha, base_commit):
+            raise _MutationRefused(
+                f"There are no new commits between base branch {base_ref!r} and head branch "
+                f"{pr.head_ref!r}"
+            )
+    if (title := _optional_string(fields, "title")) is not None:
+        pr.title = title
+    if (body := _optional_string(fields, "body")) is not None:
+        pr.body = body
+    if base_ref is not None:
+        repo.update_pr_base(pr, base_ref=base_ref)
+
+
 def _find_pr_by_node_id(
     state: FakeGithubState,
     node_id: str,
@@ -1905,6 +1886,8 @@ def _graphql_repo_payload(
     repo: FakeGithubRepo,
     variables: dict[str, object],
 ) -> dict[str, object]:
+    if "RepositoryId" in query:
+        return {"id": repo.node_id}
     if "BaseBranchMergeQueue" in query:
         return {
             "mergeQueue": ({"id": "merge-queue"} if repo.merge_queue_enabled else None),

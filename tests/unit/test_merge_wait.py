@@ -54,6 +54,7 @@ async def _wait(snapshots: Iterator[tuple[GithubPR, ...] | BaseException]):
             change_id=ChangeId(f"change-{n}"),
             commit_id=CommitId(f"sha-{n}"),
             identity=PRIdentity(pr_number=n, head_ref=f"feature-{n}"),
+            pr_node_id="PR_1",
         )
         for n in (1, 2)
     )

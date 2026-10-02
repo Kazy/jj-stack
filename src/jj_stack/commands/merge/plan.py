@@ -83,6 +83,7 @@ class MergeChange:
     change_id: ChangeId
     commit_id: CommitId
     identity: PRIdentity
+    pr_node_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,6 +239,7 @@ def _merge_change(
         change_id=change.change_id,
         commit_id=change.commit_id,
         identity=candidate.pr_identity,
+        pr_node_id=pr.node_id,
     )
 
 

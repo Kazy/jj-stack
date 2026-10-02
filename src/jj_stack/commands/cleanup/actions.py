@@ -74,7 +74,7 @@ async def close_pr_on_trunk(
     pr_label = format_pr_label(pr.number, url=pr.html_url)
     try:
         if pr.base.ref != trunk_branch:
-            pr = await github_client.update_pr(pr_number=pr.number, base=trunk_branch)
+            pr = await github_client.update_pr(pr_id=pr.node_id, base=trunk_branch)
             if pr.state == "open" and pr.base.ref != trunk_branch:
                 return (
                     t"cannot close {pr_label} because GitHub did not retarget it to "
