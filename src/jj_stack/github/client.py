@@ -22,6 +22,7 @@ from jj_stack.github.auth import github_token
 from jj_stack.github.resolution import GithubRepoAddress
 from jj_stack.identifiers import CommitId
 from jj_stack.models.github import (
+    DEFAULT_PR_TEMPLATE_PATHS,
     GithubIssueComment,
     GithubPR,
     GithubPRReview,
@@ -64,6 +65,18 @@ class GraphqlError(BaseModel):
 class _GraphqlResponse(BaseModel):
     data: dict[str, object] | None = None
     errors: tuple[GraphqlError, ...] = ()
+
+
+class _GraphqlTemplateBlob(BaseModel):
+    text: str | None
+
+
+class _GraphqlPRTemplate(BaseModel):
+    repository: dict[str, _GraphqlTemplateBlob | None]
+
+
+class _GraphqlPRTemplates(BaseModel):
+    templates: tuple[_GraphqlPRTemplate, ...] = Field(alias="pullRequestTemplates")
 
 
 class _RestErrorDetail(BaseModel):
@@ -349,6 +362,12 @@ class GithubClient:
         self._repository_id = repo.node_id
         return repo
 
+    async def get_pr_template(self) -> str:
+        """Read GitHub's default template, including the owner's public .github fallback."""
+
+        _, template = await self.get_publication_branches(branches=(), include_pr_template=True)
+        return template
+
     async def get_branch_targets(
         self,
         *,
@@ -356,17 +375,37 @@ class GithubClient:
     ) -> dict[str, CommitId]:
         """Return exact GitHub branch targets without advertising unrelated refs."""
 
+        targets, _ = await self.get_publication_branches(
+            branches=branches, include_pr_template=False
+        )
+        return targets
+
+    async def get_publication_branches(
+        self,
+        *,
+        branches: Sequence[str],
+        include_pr_template: bool,
+    ) -> tuple[dict[str, CommitId], str]:
+        """Read branch targets and optionally the default PR template in the same request."""
+
         ordered = tuple(dict.fromkeys(branches))
         targets: dict[str, CommitId] = {}
+        template = ""
 
         async def query_chunk(chunk: tuple[str, ...]) -> None:
-            query, branch_variables = _branch_targets_query(chunk)
+            nonlocal template
+            read_template = include_pr_template and (not ordered or chunk[0] == ordered[0])
+            query, branch_variables = _branch_targets_query(
+                chunk, include_pr_template=read_template
+            )
             payload = await self._graphql_query(
                 query,
                 variables={**self._repo_variables, **branch_variables},
                 response_name="branch target lookup",
             )
             repo = _graphql_repo_payload(payload, response_name="branch target lookup")
+            if read_template:
+                template = _default_pr_template(repo)
             for index, branch in enumerate(chunk):
                 raw_ref = repo.get(f"branch_{index}")
                 if raw_ref is None:
@@ -386,29 +425,37 @@ class GithubClient:
                     )
                 targets[branch] = target
 
-        await _query_chunks(ordered, query_chunk)
-        return targets
+        if ordered:
+            await _query_chunks(ordered, query_chunk)
+        elif include_pr_template:
+            await query_chunk(())
+        return targets, template
 
-    async def find_branch_targets_by_suffix(
+    async def get_publication_branches_by_suffix(
         self,
         *,
         branch_prefix: str,
         suffixes: Sequence[str],
-    ) -> dict[str, CommitId]:
-        """Find branch targets under one namespace by exact name suffix."""
+        include_pr_template: bool,
+    ) -> tuple[dict[str, CommitId], str]:
+        """Read recovery branch targets and optionally the default PR template together."""
 
         ordered = tuple(dict.fromkeys(suffixes))
         targets: dict[str, CommitId] = {}
+        template = ""
 
         async def query_chunk(chunk: tuple[str, ...]) -> None:
+            nonlocal template
             pending: tuple[tuple[str, str | None], ...] = tuple(
                 (suffix, None) for suffix in chunk
             )
             while pending:
+                read_template = include_pr_template and pending[0] == (ordered[0], None)
                 query, suffix_variables = _branch_targets_by_suffix_query(
                     after_cursors=tuple(cursor for _suffix, cursor in pending),
                     branch_prefix=branch_prefix,
                     suffixes=tuple(suffix for suffix, _cursor in pending),
+                    include_pr_template=read_template,
                 )
                 payload = await self._graphql_query(
                     query,
@@ -416,6 +463,8 @@ class GithubClient:
                     response_name="branch suffix lookup",
                 )
                 repo = _graphql_repo_payload(payload, response_name="branch suffix lookup")
+                if read_template:
+                    template = _default_pr_template(repo)
                 next_page: list[tuple[str, str]] = []
                 for index, (suffix, _cursor) in enumerate(pending):
                     connection = _validate_model(
@@ -436,7 +485,7 @@ class GithubClient:
                 pending = tuple(next_page)
 
         await _query_chunks(ordered, query_chunk)
-        return targets
+        return targets, template
 
     async def list_stacks(self) -> tuple[GithubStack, ...]:
         payload = await self._get_paginated_json_array(
@@ -1371,6 +1420,31 @@ def _only_unresolvable_aliases(errors: tuple[GraphqlError, ...]) -> bool:
     )
 
 
+def _default_pr_template(repo: dict[str, object]) -> str:
+    templates = _validate_model(
+        repo,
+        model=_GraphqlPRTemplates,
+        error_context="GitHub pull request template response had invalid data",
+    )
+    for item in templates.templates:
+        for index in range(len(DEFAULT_PR_TEMPLATE_PATHS)):
+            blob = item.repository.get(f"default_{index}")
+            if blob is not None:
+                return (blob.text or "").strip()
+    return ""
+
+
+def _pr_template_selection() -> str:
+    # GitHub chooses the effective source, including the owner's public .github repo. Its
+    # template filenames omit directories, so inspect actual default paths in that source
+    # rather than mistaking a file inside PULL_REQUEST_TEMPLATE/ for the default.
+    files = "\n".join(
+        f'default_{index}: object(expression: "HEAD:{path}") {{ ... on Blob {{ text }} }}'
+        for index, path in enumerate(DEFAULT_PR_TEMPLATE_PATHS)
+    )
+    return f"pullRequestTemplates {{ repository {{ {files} }} }}"
+
+
 def _graphql_repo_payload(
     payload: dict[str, object],
     *,
@@ -1427,9 +1501,13 @@ def _merge_progress_fields() -> str:
     """
 
 
-def _branch_targets_query(branches: Sequence[str]) -> tuple[str, dict[str, str]]:
+def _branch_targets_query(
+    branches: Sequence[str], *, include_pr_template: bool = False
+) -> tuple[str, dict[str, str]]:
     variables: dict[str, str] = {}
     selections: list[str] = []
+    if include_pr_template:
+        selections.append(_pr_template_selection())
     for index, branch in enumerate(branches):
         name = f"qualified_{index}"
         variables[name] = f"refs/heads/{branch}"
@@ -1461,9 +1539,12 @@ def _branch_targets_by_suffix_query(
     after_cursors: Sequence[str | None],
     branch_prefix: str,
     suffixes: Sequence[str],
+    include_pr_template: bool = False,
 ) -> tuple[str, dict[str, str]]:
     variables: dict[str, str] = {"ref_prefix": f"refs/heads/{branch_prefix}"}
     selections: list[str] = []
+    if include_pr_template:
+        selections.append(_pr_template_selection())
     for index, (suffix, cursor) in enumerate(zip(suffixes, after_cursors, strict=True)):
         suffix_name = f"suffix_{index}"
         after = ""

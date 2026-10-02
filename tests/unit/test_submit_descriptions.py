@@ -24,7 +24,7 @@ def _resolve_default_bodies(tmp_path: Path, *, description: str) -> str:
         jj_client=JjClient(tmp_path),
         changes=(change,),
         selected_revset="@-",
-        template=read_pr_template(tmp_path),
+        template=read_pr_template(tmp_path) or "",
     )
     assert stack_description is None
     return descriptions[ChangeId("ch1")].body
@@ -51,7 +51,7 @@ def test_change_description_body_wins_over_pr_template(tmp_path: Path) -> None:
     assert body == "Real body paragraph."
 
 
-def test_empty_pr_template_counts_as_absent(tmp_path: Path) -> None:
+def test_empty_pr_template_repeats_the_subject(tmp_path: Path) -> None:
     (tmp_path / "PULL_REQUEST_TEMPLATE.md").write_text("  \n\n", encoding="utf-8")
 
     body = _resolve_default_bodies(tmp_path, description="fix: subject only\n")

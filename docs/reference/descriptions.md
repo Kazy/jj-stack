@@ -26,6 +26,11 @@ template exists.
 jj-stack looks for `PULL_REQUEST_TEMPLATE.md` or `pull_request_template.md` in `.github/`, the
 repo root, and `docs/`, in that order. It uses the first file it finds.
 
+If no local file exists, jj-stack asks GitHub for the default template. This includes a template
+on the repo's default branch or, when the repo has none, in its owner's public `.github`
+repository, following GitHub's default community health file rules. An empty local template
+overrides this fallback. jj-stack does not choose among named templates.
+
 When the body comes from the change description, jj-stack removes line wrapping inside Markdown
 paragraphs while preserving lists, quotes, tables, code blocks, and explicit line breaks.
 

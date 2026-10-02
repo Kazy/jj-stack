@@ -15,17 +15,17 @@ from jj_stack.models.tracking import TrackingState
 from jj_stack.stack.observation import observe_change_copies
 from jj_stack.stack.selected import require_submittable_changes, select_stack_path
 
-from .descriptions import read_pr_template, resolve_generated_descriptions
+from .descriptions import resolve_generated_descriptions
 from .github_stack import GithubStackPRSnapshot, github_stack_pr_snapshot
-from .models import ExplicitBase, PublicationInputs, SubmitOptions
+from .models import ExplicitBase, PublicationInputs, SubmitOptions, SubmitSelection
 
 
-def prepare_submit_inputs(
+def select_submit_inputs(
     *,
     context: CommandContext,
     options: SubmitOptions,
     state: TrackingState,
-) -> PublicationInputs:
+) -> SubmitSelection:
     """Load local submit state before any GitHub mutation begins."""
 
     client = context.jj_client
@@ -72,14 +72,11 @@ def prepare_submit_inputs(
             t"{ui.cmd('--describe-with')} cannot be combined with {ui.cmd('--edit')} or "
             t"{ui.cmd('--resume-edit')}."
         )
-    return prepare_publication_inputs(
-        context=context,
+    preflight_publication_stack(client, stack)
+    return SubmitSelection(
         stack=stack,
         remote=remote,
-        state=state,
         is_maximal_path=path.is_maximal,
-        descriptions=options.descriptions,
-        describe_with=options.describe_with,
         explicit_base=explicit_base,
     )
 
@@ -87,6 +84,7 @@ def prepare_submit_inputs(
 def prepare_publication_inputs(
     *,
     context: CommandContext,
+    template: str,
     stack: LocalStack,
     remote: GitRemote,
     state: TrackingState,
@@ -96,10 +94,6 @@ def prepare_publication_inputs(
     explicit_base: ExplicitBase | None = None,
 ) -> PublicationInputs:
     client = context.jj_client
-    require_submittable_changes(stack.changes)
-    preflight_conflicted_changes(stack.changes)
-    preflight_private_commits(client, stack.changes)
-    template = read_pr_template(client.repo_root)
     (
         generated_pr_descriptions,
         generated_stack_description,
@@ -130,6 +124,12 @@ def prepare_publication_inputs(
         state=state,
         submitted_commits={change.change_id: change for change in submitted_commits},
     )
+
+
+def preflight_publication_stack(client: JjClient, stack: LocalStack) -> None:
+    require_submittable_changes(stack.changes)
+    preflight_conflicted_changes(stack.changes)
+    preflight_private_commits(client, stack.changes)
 
 
 def confirm_orphaned_pr_snapshots(

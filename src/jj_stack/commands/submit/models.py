@@ -136,6 +136,16 @@ class ExplicitBase:
 
 
 @dataclass(frozen=True, slots=True)
+class SubmitSelection:
+    """The local stack and base selected before reading GitHub."""
+
+    explicit_base: ExplicitBase | None
+    is_maximal_path: bool
+    remote: GitRemote
+    stack: LocalStack
+
+
+@dataclass(frozen=True, slots=True)
 class PublicationInputs:
     """Local publication inputs prepared before GitHub mutations begin."""
 

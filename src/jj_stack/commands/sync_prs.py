@@ -5,12 +5,16 @@ from __future__ import annotations
 import jj_stack.console as console
 import jj_stack.ui as ui
 from jj_stack.bootstrap import CommandContext
-from jj_stack.commands.submit.descriptions import preserve_external_pr_text
-from jj_stack.commands.submit.inputs import prepare_publication_inputs
+from jj_stack.commands.submit.descriptions import preserve_external_pr_text, read_pr_template
+from jj_stack.commands.submit.inputs import (
+    preflight_publication_stack,
+    prepare_publication_inputs,
+)
 from jj_stack.commands.submit.models import PreparedSubmitChange, PRMetadataAction
 from jj_stack.commands.submit.publication import plan_pr_updates, publish_prepared
 from jj_stack.errors import CliError, ConflictedStackError
 from jj_stack.github.client import GithubClient
+from jj_stack.github.error_messages import read_or_stop
 from jj_stack.github.resolution import GithubTarget
 from jj_stack.identifiers import ChangeId, CommitId, short_change_id
 from jj_stack.models.github import GithubStack
@@ -48,8 +52,18 @@ async def refresh_selected_prs(
     if tuple(change.change_id for change in path.stack.changes) != selected_ids:
         raise CliError("The remaining local stack changed during sync; inspect it and retry.")
     try:
+        preflight_publication_stack(context.jj_client, path.stack)
+        template = read_pr_template(context.jj_client.repo_root)
+        if template is None:
+            with console.spinner(
+                description="Fetching pull request template from GitHub", report_changes=True
+            ):
+                template = await read_or_stop(
+                    github.get_pr_template(), message="Could not load the pull request template."
+                )
         inputs = prepare_publication_inputs(
             context=context,
+            template=template,
             stack=path.stack,
             state=state,
             remote=target.remote,

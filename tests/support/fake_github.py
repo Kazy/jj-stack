@@ -288,6 +288,7 @@ class FakeGithubRepo:
     queue_failures: set[int] = field(default_factory=set)
     # Whether the token may push. A read-only clone of an upstream repo reports False.
     push_permission: bool = True
+    pr_template: str | None = None
     stack_merge_operations: dict[int, FakeStackMergeOperation] = field(default_factory=dict)
     stack_merge_requests: list[tuple[int, str | None, str, str]] = field(default_factory=list)
     auto_merge_reachable_heads: bool = True
@@ -1899,10 +1900,20 @@ def _graphql_repo_payload(
         }
     if "BranchMergeRules" in query:
         return _graphql_branch_rules(query=query, repo=repo, variables=variables)
-    if "BranchTargetsBySuffix" in query:
-        return _graphql_branch_targets_by_suffix(query=query, repo=repo, variables=variables)
     if "BranchTargets" in query:
-        return _graphql_branch_targets(query=query, repo=repo, variables=variables)
+        lookup = (
+            _graphql_branch_targets_by_suffix
+            if "BranchTargetsBySuffix" in query
+            else _graphql_branch_targets
+        )
+        payload = lookup(query=query, repo=repo, variables=variables)
+        if "pullRequestTemplates" in query:
+            payload["pullRequestTemplates"] = (
+                [{"repository": {"default_0": {"text": repo.pr_template}}}]
+                if repo.pr_template is not None
+                else []
+            )
+        return payload
     lines = query.splitlines()
     ref_queries: list[tuple[str, str, str, int, frozenset[str]]] = []
     for index, line in enumerate(lines):

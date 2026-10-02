@@ -13,7 +13,12 @@ from jj_stack.github.client import GithubClient, GithubClientError
 from jj_stack.github.overview_comments import delete_stack_overview_comment
 from jj_stack.github.resolution import GithubRepoAddress
 from jj_stack.identifiers import CommitId
-from jj_stack.models.github import GithubBranchRef, GithubPR, GithubPRHead
+from jj_stack.models.github import (
+    DEFAULT_PR_TEMPLATE_PATHS,
+    GithubBranchRef,
+    GithubPR,
+    GithubPRHead,
+)
 
 
 def _github_client(handler) -> GithubClient:
@@ -27,6 +32,76 @@ def _github_client(handler) -> GithubClient:
             repo="stacked-prs",
         ),
     )
+
+
+@pytest.mark.parametrize(
+    ("default_path", "body", "expected", "suffix_lookup"),
+    (
+        (
+            ".github/PULL_REQUEST_TEMPLATE.md",
+            "  ## Owner template\n",
+            "## Owner template",
+            False,
+        ),
+        (None, None, "", False),
+        (
+            "docs/pull_request_template.md",
+            "## Owner template",
+            "## Owner template",
+            True,
+        ),
+    ),
+)
+def test_pr_template_uses_githubs_default_without_selecting_a_named_template(
+    default_path: str | None, body: str | None, expected: str, suffix_lookup: bool
+) -> None:
+    requests = 0
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal requests
+        requests += 1
+        payload = json.loads(request.content)
+        variables = {"owner": "octo-org", "repo": "stacked-prs"}
+        sources: dict[str, object] = {}
+        for index, path in enumerate(DEFAULT_PR_TEMPLATE_PATHS):
+            assert f'default_{index}: object(expression: "HEAD:{path}")' in payload["query"]
+            sources[f"default_{index}"] = {"text": body} if path == default_path else None
+        ref = {"name": "feature", "prefix": "refs/heads/", "target": {"oid": "a" * 40}}
+        # Even a sole named template whose basename is pull_request_template.md has no default
+        # file at these paths. GitHub's filename/body fields cannot distinguish that case.
+        repository: dict[str, object] = {"pullRequestTemplates": [{"repository": sources}]}
+        if suffix_lookup:
+            variables.update(ref_prefix="refs/heads/jj-stack/", suffix_0="-abcd")
+            ref["name"] = "jj-stack/feature-abcd"
+            repository["suffix_0"] = {
+                "nodes": [ref],
+                "pageInfo": {"endCursor": None, "hasNextPage": False},
+            }
+        else:
+            variables["qualified_0"] = "refs/heads/feature"
+            repository["branch_0"] = ref
+        assert payload["variables"] == variables
+        return httpx2.Response(
+            200,
+            json={"data": {"repository": repository}},
+        )
+
+    async def run_test() -> str:
+        async with _github_client(handler) as client:
+            if suffix_lookup:
+                targets, template = await client.get_publication_branches_by_suffix(
+                    branch_prefix="jj-stack/", suffixes=("-abcd",), include_pr_template=True
+                )
+                assert targets == {"jj-stack/feature-abcd": "a" * 40}
+            else:
+                targets, template = await client.get_publication_branches(
+                    branches=("feature",), include_pr_template=True
+                )
+                assert targets == {"feature": "a" * 40}
+            return template
+
+    assert asyncio.run(run_test()) == expected
+    assert requests == 1
 
 
 @pytest.mark.parametrize("changed", [None, "head", "base", "merge"])
@@ -590,9 +665,10 @@ def test_github_client_observes_exact_and_suffix_matched_branch_targets() -> Non
             exact = await client.get_branch_targets(
                 branches=("jj-stack/current", "jj-stack/missing"),
             )
-            recovered = await client.find_branch_targets_by_suffix(
+            recovered, _ = await client.get_publication_branches_by_suffix(
                 branch_prefix="jj-stack/",
                 suffixes=("-aaaaaaaa",),
+                include_pr_template=False,
             )
         return exact, recovered
 

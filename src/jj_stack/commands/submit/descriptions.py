@@ -18,7 +18,7 @@ import jj_stack.ui as ui
 from jj_stack.errors import CliError, UsageError
 from jj_stack.identifiers import ChangeId
 from jj_stack.jj.client import JjClient, JjCommandError
-from jj_stack.models.github import GithubPR
+from jj_stack.models.github import DEFAULT_PR_TEMPLATE_PATHS, GithubPR
 from jj_stack.models.stack import LocalCommit
 
 from .default_pr_text import default_pr_body
@@ -140,23 +140,18 @@ def preserve_external_pr_text(
     return preserved
 
 
-_PR_TEMPLATE_DIRECTORIES = (".github", "", "docs")
-_PR_TEMPLATE_NAMES = ("PULL_REQUEST_TEMPLATE.md", "pull_request_template.md")
-
-
-def read_pr_template(repo_root: Path) -> str:
-    for directory in _PR_TEMPLATE_DIRECTORIES:
-        for name in _PR_TEMPLATE_NAMES:
-            path = repo_root / directory / name
-            if not path.is_file():
-                continue
-            try:
-                return path.read_text(encoding="utf-8").strip()
-            except (OSError, UnicodeDecodeError) as error:
-                raise CliError(
-                    t"Could not read pull request template {ui.cmd(str(path))}: {error}"
-                ) from error
-    return ""
+def read_pr_template(repo_root: Path) -> str | None:
+    for relative_path in DEFAULT_PR_TEMPLATE_PATHS:
+        path = repo_root / relative_path
+        if not path.is_file():
+            continue
+        try:
+            return path.read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeDecodeError) as error:
+            raise CliError(
+                t"Could not read pull request template {ui.cmd(str(path))}: {error}"
+            ) from error
+    return None
 
 
 def _resolve_description_files(

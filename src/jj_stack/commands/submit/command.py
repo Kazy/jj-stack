@@ -58,9 +58,9 @@ from jj_stack.stack.trunk import observe_trunk_branch
 from jj_stack.state.operation_lock import operation_lock
 
 from .changes import prepare_submit_changes, require_published_base
-from .descriptions import preserve_external_pr_text
+from .descriptions import preserve_external_pr_text, read_pr_template
 from .editor import edit_pr_document, parse_edited_pr_document, resume_edit_hint
-from .inputs import prepare_submit_inputs
+from .inputs import prepare_publication_inputs, select_submit_inputs
 from .models import (
     GeneratedDescription,
     PreparedSubmitChange,
@@ -82,7 +82,9 @@ DESCRIPTION_HELP = """
 A pull request title comes from a change's subject line, and its body from the rest of the
 description. When a description has no body, `jj-stack` uses the repo's pull request template
 (`.github/PULL_REQUEST_TEMPLATE.md`, `PULL_REQUEST_TEMPLATE.md`, or
-`docs/PULL_REQUEST_TEMPLATE.md`), or repeats the subject line if no template exists.
+`docs/PULL_REQUEST_TEMPLATE.md`). If no local file exists, it asks GitHub for the default
+template, including the owner's public `.github` repository fallback. Without a template,
+it repeats the subject line.
 
 Later submits refresh the title and body from the change description, provided both still match
 the defaults for the last submitted version. Editing either field on GitHub preserves both.
@@ -453,21 +455,30 @@ async def _observe_submit(
 
     state = context.state_store.load()
     with console.spinner(description="Preparing submit"):
-        prepared_inputs = prepare_submit_inputs(
+        selection = select_submit_inputs(
             context=context,
             options=options,
             state=state,
         )
-    client = prepared_inputs.client
-    remote = prepared_inputs.remote
-    stack = prepared_inputs.stack
-    state = prepared_inputs.state
-    explicit_base = prepared_inputs.explicit_base
+    client = context.jj_client
+    remote = selection.remote
+    stack = selection.stack
+    explicit_base = selection.explicit_base
     base_branch = explicit_base.branch if explicit_base is not None else None
     if on_prepared is not None:
         on_prepared(stack.head.change_id, stack.head.subject)
 
     if not stack.changes:
+        prepared_inputs = prepare_publication_inputs(
+            context=context,
+            template="",
+            stack=stack,
+            remote=remote,
+            state=state,
+            is_maximal_path=selection.is_maximal_path,
+            descriptions=options.descriptions,
+            describe_with=options.describe_with,
+        )
         print_submit_rows(inputs=prepared_inputs, rows=(), heading="Submitted changes:")
         return None
 
@@ -508,19 +519,30 @@ async def _observe_submit(
             for branch, change_id in branches.items()
         }
 
-    generated_descriptions = prepared_inputs.generated_pr_descriptions
-    with console.spinner(description="Inspecting remotes"):
+    local_template = read_pr_template(client.repo_root)
+    with console.spinner(
+        description=(
+            "Inspecting remotes and fetching pull request template from GitHub"
+            if local_template is None
+            else "Inspecting remotes"
+        ),
+        report_changes=local_template is None,
+    ):
         exact_targets_task = asyncio.create_task(
             read_or_stop(
-                github_client.get_branch_targets(branches=exact_remote_branches),
+                github_client.get_publication_branches(
+                    branches=exact_remote_branches,
+                    include_pr_template=local_template is None and bool(exact_remote_branches),
+                ),
                 message=_BRANCH_LOOKUP_MESSAGE,
             )
         )
         recovery_targets_task = asyncio.create_task(
             read_or_stop(
-                github_client.find_branch_targets_by_suffix(
+                github_client.get_publication_branches_by_suffix(
                     branch_prefix=current_pr_branch_namespace().branch_prefix,
                     suffixes=recovery_suffixes,
+                    include_pr_template=local_template is None and not exact_remote_branches,
                 ),
                 message=_BRANCH_LOOKUP_MESSAGE,
             )
@@ -539,7 +561,10 @@ async def _observe_submit(
         await wait_for_read_tasks(
             exact_targets_task, recovery_targets_task, repo_task, lookups_task, stacks_task
         )
-        remote_targets = {**exact_targets_task.result(), **recovery_targets_task.result()}
+        exact_targets, exact_template = exact_targets_task.result()
+        recovery_targets, recovery_template = recovery_targets_task.result()
+        github_template = exact_template if exact_remote_branches else recovery_template
+        remote_targets = {**exact_targets, **recovery_targets}
         branch_resolutions = _recover_interrupted_first_submissions(
             client=client,
             remote=remote,
@@ -586,6 +611,17 @@ async def _observe_submit(
             remote=remote,
             trunk_commit_id=stack.trunk.commit_id,
         )
+    prepared_inputs = prepare_publication_inputs(
+        context=context,
+        template=github_template if local_template is None else local_template,
+        stack=stack,
+        remote=remote,
+        state=state,
+        is_maximal_path=selection.is_maximal_path,
+        descriptions=options.descriptions,
+        describe_with=options.describe_with,
+        explicit_base=explicit_base,
+    )
     prepared_changes = prepare_submit_changes(
         branch_resolutions=branch_resolutions,
         github_stacks=observed_stacks,
@@ -625,7 +661,7 @@ async def _observe_submit(
         for prepared in prepared_changes
     }
     generated_descriptions = preserve_external_pr_text(
-        descriptions=generated_descriptions,
+        descriptions=prepared_inputs.generated_pr_descriptions,
         prs={prepared.change.change_id: prepared.pr for prepared in prepared_changes},
         submitted_commits=prepared_inputs.submitted_commits,
         template=prepared_inputs.pr_template,

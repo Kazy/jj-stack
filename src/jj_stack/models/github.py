@@ -17,6 +17,11 @@ from jj_stack.models.github_details import GithubMergeQueueEntry, GithubPRMergeD
 CheckRollupStatus = Literal["failed", "passed", "pending"]
 PRState = Literal["open", "closed", "merged"]
 ReviewDecision = Literal["approved", "changes_requested", "review_required"]
+DEFAULT_PR_TEMPLATE_PATHS = tuple(
+    f"{directory}{name}"
+    for directory in (".github/", "", "docs/")
+    for name in ("PULL_REQUEST_TEMPLATE.md", "pull_request_template.md")
+)
 
 _CHECK_ROLLUP_STATUSES: dict[str, CheckRollupStatus] = {
     "ERROR": "failed",

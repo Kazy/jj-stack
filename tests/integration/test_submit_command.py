@@ -65,6 +65,44 @@ def _revision_history_comments(fake_repo, issue_number: int):
     ]
 
 
+@pytest.mark.parametrize("local_template", (None, "", "## Local template"))
+def test_submit_uses_github_template_only_when_no_local_file_exists(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+    local_template: str | None,
+) -> None:
+    repo, fake_repo = init_fake_github_repo(tmp_path)
+    config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
+    commit_file(repo, "feature 1", "feature-1.txt")
+    commit_file(repo, "feature 2\n\nDescription body", "feature-2.txt")
+    if local_template is not None:
+        write_file(repo / "PULL_REQUEST_TEMPLATE.md", local_template)
+    fake_repo.pr_template = "## Owner template"
+    assert run_main(repo, config_path, "submit") == 0
+    captured = capsys.readouterr()
+
+    assert ("fetching pull request template from GitHub" in captured.err) == (
+        local_template is None
+    )
+    assert fake_repo.prs[1].body == (
+        "## Owner template" if local_template is None else local_template or "feature 1"
+    )
+    assert fake_repo.prs[2].body == "Description body"
+
+
+def test_submit_validates_description_options_even_when_no_changes_are_selected(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    repo, fake_repo = init_fake_github_repo(tmp_path)
+    config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
+
+    assert run_main(repo, config_path, "submit", "trunk()", "--describe", "stack=body.md") == 5
+    captured = capsys.readouterr()
+    assert "more than one change" in captured.err
+    assert fake_repo.prs == {}
+
+
 def _assert_stack_prs_match_dag(
     *,
     fake_repo,
