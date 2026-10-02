@@ -190,6 +190,19 @@ class _GraphqlMergeRule(BaseModel):
     parameters: _GraphqlRuleParameters | None = None
 
 
+class _GraphqlMergeRules(BaseModel):
+    nodes: tuple[_GraphqlMergeRule | None, ...]
+
+
+class _GraphqlRuledRef(BaseModel):
+    rules: _GraphqlMergeRules
+
+
+class _GraphqlBaseBranchMergeQueue(BaseModel):
+    merge_queue: dict[str, object] | None = Field(alias="mergeQueue")
+    ref: _GraphqlRuledRef | None
+
+
 class _GraphqlRefUpdateRule(BaseModel):
     """Branch protection as it applies to the viewer, who may be allowed to bypass it."""
 
@@ -979,18 +992,15 @@ class GithubClient:
                 "qualified": f"refs/heads/{branch}",
             },
         )
-        repo = _graphql_repo_payload(
-            payload,
-            response_name="base branch merge queue lookup",
+        observed = _validate_model(
+            _graphql_repo_payload(payload, response_name="base branch merge queue lookup"),
+            model=_GraphqlBaseBranchMergeQueue,
+            error_context="GitHub base branch merge queue lookup response had invalid data",
         )
-        if repo.get("mergeQueue") is not None:
+        if observed.merge_queue is not None:
             return True
-        ref = repo.get("ref")
-        rules = ref.get("rules") if isinstance(ref, dict) else None
-        nodes = rules.get("nodes") if isinstance(rules, dict) else None
-        return isinstance(nodes, list) and any(
-            isinstance(node, dict) and node.get("type") == "MERGE_QUEUE" for node in nodes
-        )
+        rules = () if observed.ref is None else observed.ref.rules.nodes
+        return any(rule is not None and rule.type == "MERGE_QUEUE" for rule in rules)
 
     async def submit_stack_merge(
         self,
