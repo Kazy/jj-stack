@@ -12,6 +12,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Literal
 
+from pydantic import BaseModel, ConfigDict, ValidationError
+
 import jj_stack.ui as ui
 from jj_stack.errors import CliError, UsageError
 from jj_stack.identifiers import ChangeId
@@ -23,6 +25,13 @@ from .default_pr_text import default_pr_body
 from .models import GeneratedDescription
 
 _DESCRIBE_WITH_STACK_INPUT_ENV = "JJ_STACK_INPUT_FILE"
+
+
+class _HelperDescription(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    body: str
+    title: str
 
 
 def resolve_generated_descriptions(
@@ -311,33 +320,16 @@ def _run_description_command(
         )
 
     try:
-        payload = json.loads(output)
-    except json.JSONDecodeError as error:
+        payload = _HelperDescription.model_validate_json(output)
+    except ValidationError as error:
         raise CliError(
             t"Describe helper {ui.cmd(command)} returned invalid JSON for "
-            t"{ui.cmd(f'--{kind}')} "
-            t"{ui.revset(revset)}: {error}"
+            t"{ui.cmd(f'--{kind}')} {ui.revset(revset)}: expected an object with string "
+            t"{ui.cmd('title')} and {ui.cmd('body')} fields."
         ) from error
 
-    if not isinstance(payload, dict):
-        raise CliError(
-            t"Describe helper {ui.cmd(command)} must return a JSON object for "
-            t"{ui.cmd(f'--{kind}')} "
-            t"{ui.revset(revset)}."
-        )
-
-    title = payload.get("title")
-    body = payload.get("body")
-    if not isinstance(title, str) or not isinstance(body, str):
-        raise CliError(
-            t"Describe helper {ui.cmd(command)} must return string "
-            t"{ui.cmd('title')} and "
-            t"{ui.cmd('body')} fields for "
-            t"{ui.cmd(f'--{kind}')} {ui.revset(revset)}."
-        )
-
     return GeneratedDescription(
-        body=body,
+        body=payload.body,
         explicit_fields=frozenset(("body", "title")),
-        title=title,
+        title=payload.title,
     )
