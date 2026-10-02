@@ -25,7 +25,7 @@ def _identity(
     )
 
 
-@pytest.mark.parametrize("version", (5, 6, 7))
+@pytest.mark.parametrize("version", (6, 7))
 def test_store_migrates_released_schemas_in_memory_and_persists_on_mutation(
     tmp_path: Path,
     version: int,
@@ -37,8 +37,6 @@ def test_store_migrates_released_schemas_in_memory_and_persists_on_mutation(
     old_baseline = baseline.model_dump(mode="json")
     if version < 7:
         old_identity.update(repo_owner="octocat", repo_name="example", head_owner="octocat")
-    if version == 5:
-        old_identity["version"], old_baseline["version"] = 3, 1
     original = (
         json.dumps(
             {
@@ -129,34 +127,6 @@ def test_store_rejects_invalid_complete_file(tmp_path: Path, mutate) -> None:
 
     assert caught.value.hint is not None
     assert "mv -i" in str(caught.value.hint)
-
-
-def test_store_rejects_invalid_schema_five_without_rewriting(tmp_path: Path) -> None:
-    state_path = tmp_path / "state.json"
-    rendered = json.dumps(
-        {
-            "version": 5,
-            "pr_identities": {
-                CHANGE_ID: _identity().model_dump(mode="json")
-                | {
-                    "version": 2,
-                    "repo_owner": "octocat",
-                    "repo_name": "example",
-                    "head_owner": "octocat",
-                },
-            },
-            "submitted_baselines": {
-                CHANGE_ID: SubmittedBaseline(commit_id="abc123").model_dump(mode="json")
-                | {"version": 1},
-            },
-        }
-    )
-    state_path.write_text(rendered, encoding="utf-8")
-
-    with pytest.raises(TrackingStateError, match="unsupported persisted tracking record version"):
-        TrackingStore(state_path).load()
-
-    assert state_path.read_text(encoding="utf-8") == rendered
 
 
 def test_store_rejects_newer_schema_with_upgrade_guidance(tmp_path: Path) -> None:
