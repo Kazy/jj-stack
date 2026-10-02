@@ -16,6 +16,8 @@ from pathlib import Path
 from types import TracebackType
 from typing import BinaryIO
 
+from pydantic import TypeAdapter, ValidationError
+
 from jj_stack.errors import EXIT_BUSY, CliError
 from jj_stack.state.store import TrackingStore
 
@@ -159,18 +161,10 @@ def try_acquire_operation_lock(
 def read_operation_lock_holder(state_dir: Path) -> OperationLockHolder | None:
     """Return the recorded lock holder, if the companion file is readable."""
 
-    holder_path = state_dir / HOLDER_FILENAME
     try:
-        raw = json.loads(holder_path.read_text(encoding="utf-8"))
-    except OSError, ValueError:
-        return None
-    try:
-        return OperationLockHolder(
-            command=str(raw["command"]),
-            pid=int(raw["pid"]),
-            started_at=str(raw["started_at"]),
-        )
-    except KeyError, TypeError, ValueError:
+        holder = (state_dir / HOLDER_FILENAME).read_bytes()
+        return TypeAdapter(OperationLockHolder).validate_json(holder)
+    except OSError, ValidationError:
         return None
 
 
