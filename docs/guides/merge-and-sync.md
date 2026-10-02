@@ -32,7 +32,8 @@ checks, approvals, conflicts, and repo rules allow the merge.
 GitHub blocks it, followed by its approvals, checks, and specific merge warnings. `needs review`
 means GitHub still requires a review. A last line says how many commits the stack is behind its
 base branch. `jj-stack list` summarizes each stack, such as `1 ready, 82 behind main, unresolved
-review threads`.
+review threads`. In terminals that support links, each problem links to the lowest pull request it
+applies to.
 
 To inspect unresolved review threads and failed or pending checks, including links, run:
 

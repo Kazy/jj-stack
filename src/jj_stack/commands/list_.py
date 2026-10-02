@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import sys
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import jj_stack.console as console
@@ -54,6 +54,7 @@ from jj_stack.stack.pr_branches import duplicate_pr_branch_claims
 from jj_stack.stack.preparation import PreparedLocalStack
 from jj_stack.stack.repo import observe_repo_paths
 from jj_stack.stack.reporting import (
+    ChangeReport,
     report_change,
     stack_behind,
     status_label,
@@ -401,7 +402,12 @@ def _status_fragments(
     if github_error is not None or remote_error is not None:
         fragments.append(ui.semantic_text("GitHub unavailable", "warning", "heading"))
 
-    reports = tuple(report_change(state) for state in states)
+    # Changes run from the bottom up, so each fragment links the lowest PR it applies to.
+    entries = tuple(
+        (report_change(state), state.pr.html_url if isinstance(state, WithPR) else None)
+        for state in states
+    )
+    reports = tuple(report for report, _url in entries)
     judged = [report.ready for report in reports if report.ready is not None]
     if judged:
         fragments.append(f"{sum(judged)} ready")
@@ -414,24 +420,43 @@ def _status_fragments(
     # Unsubmitted changes have their own local stack rows; readiness covers open and approved.
     for status, count in counts.items():
         if status not in {"unsubmitted", "submitted", "open", "approved"}:
-            fragments.append(status_label(status, count=count))
+            url = next(url for report, url in entries if report.status == status)
+            fragments.append(_linked(status_label(status, count=count), url))
+    fragments.extend(_check_and_warning_fragments(entries))
+    return tuple(fragments)
 
-    check_statuses = {report.checks for report in reports if report.problem is None}
+
+def _check_and_warning_fragments(
+    entries: tuple[tuple[ChangeReport, str | None], ...],
+) -> tuple[ui.Message, ...]:
+    fragments: list[ui.Message] = []
+    healthy = tuple((report, url) for report, url in entries if report.problem is None)
     for rollup_status, labels in (
         ("failed", ("warning", "heading")),
         ("pending", ("hint", "heading")),
     ):
-        if rollup_status in check_statuses:
-            fragments.append(ui.semantic_text(f"checks {rollup_status}", *labels))
+        urls = [url for report, url in healthy if report.checks == rollup_status]
+        if urls:
+            label = ui.semantic_text(f"checks {rollup_status}", *labels)
+            fragments.append(_linked(label, urls[0]))
             break
-    for warning in dict.fromkeys(
-        warning
-        for report in reports
-        if report.problem is None
-        for warning in report.merge_warnings
-    ):
-        fragments.append(ui.semantic_text(warning, "warning", "heading"))
+    warnings: dict[str, str | None] = {}
+    for report, url in healthy:
+        for warning in report.merge_warnings:
+            warnings.setdefault(warning, url)
+    fragments.extend(
+        _linked(ui.semantic_text(warning, "warning", "heading"), url)
+        for warning, url in warnings.items()
+    )
     return tuple(fragments)
+
+
+def _linked(label: ui.Message, url: str | None) -> ui.Message:
+    if url is None:
+        return label
+    if isinstance(label, ui.SemanticText):
+        return replace(label, link=url)
+    return ui.hyperlink(label, url) if isinstance(label, str) else label
 
 
 def _pr_references_from_changes(

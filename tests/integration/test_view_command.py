@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from jj_stack.errors import EXIT_AMBIGUOUS, EXIT_FAILURE, EXIT_INCOMPLETE, EXIT_NO_STACK
@@ -675,20 +676,23 @@ def test_view_and_list_report_readiness_approvals_and_lag_behind_trunk(
     repo, fake_repo = init_fake_github_repo_with_submitted_stack(tmp_path, size=2)
     config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
     fake_repo.branch_rules["main"] = FakeMergeRequirements(resolve_threads=True)
-    fake_repo.create_pr_review(pr_number=1, reviewer_login="alice", state="APPROVED")
-    fake_repo.prs[2].review_threads.append(
+    fake_repo.create_pr_review(pr_number=2, reviewer_login="alice", state="APPROVED")
+    fake_repo.prs[1].review_threads.append(
         GithubReviewThread.model_validate(
-            {"isResolved": False, "isOutdated": False, "path": "feature-2.txt", "line": 1}
+            {"isResolved": False, "isOutdated": False, "path": "feature-1.txt", "line": 1}
         )
     )
     fake_repo.advance_branch("main", path="trunk.txt", contents="trunk\n")
 
     assert run_main(repo, config_path, "view") == 0
     out = " ".join(capsys.readouterr().out.split())
-    assert "✓ PR #1: 1 approval" in out
-    assert "✗ PR #2: unresolved review threads" in out
+    assert "✓ PR #2: 1 approval" in out
+    assert "✗ PR #1: unresolved review threads" in out
     assert "The stack is 1 commit behind main." in out
 
-    assert run_main(repo, config_path, "list") == 0
-    out = " ".join(capsys.readouterr().out.split())
-    assert "1 ready, 1 behind main, unresolved review" in out
+    assert run_main(repo, config_path, "list", "--color=always") == 0
+    out = capsys.readouterr().out
+    plain = " ".join(re.sub(r"\x1b(\][^\x1b]*\x1b\\|\[[\d;]*m)", "", out).split())
+    assert "1 ready, 1 behind main, unresolved review" in plain
+    # The warning links to the lowest PR it applies to, not the stack's top PR.
+    assert re.search(r"pull/1\x1b\\\x1b\[[\d;]*munresolved review", out)
