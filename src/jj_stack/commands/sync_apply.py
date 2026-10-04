@@ -176,6 +176,11 @@ def _apply_local_convergence(
                 destination=destination,
             )
         if replaced:
+            # Abandoning the checked-out commit would leave the workspace on a new empty change
+            # at the old base, outside the stack.
+            for item in rewritten:
+                if item.local_change.current_working_copy:
+                    context.jj_client.edit_commit(item.pr.head.sha, cli_args=JjCliArgs())
             context.jj_client.abandon_commits(replaced)
         dependencies = _observe_removal_dependencies(context=context, actions=actions)
         abandoned = tuple(

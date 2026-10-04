@@ -550,6 +550,8 @@ def test_sync_adopts_survivors_that_github_rooted_past_the_merge_result(
         "main", path="landed-first.txt", contents="landed before the rewrite\n"
     )
     remote_survivor = fake_repo.rewrite_pr_onto_base(fake_repo.prs[2], base_ref="main")
+    # The author keeps working on the survivor, which sync replaces with GitHub's commit.
+    run_command(["jj", "edit", survivor.change_id], repo)
 
     exit_code = run_main(repo, config_path, "sync", survivor.change_id)
     captured = capsys.readouterr()
@@ -557,6 +559,7 @@ def test_sync_adopts_survivors_that_github_rooted_past_the_merge_result(
     assert exit_code == 0, (captured.out, captured.err)
     adopted = JjClient(repo).resolve_commit(survivor.change_id)
     assert adopted.commit_id == remote_survivor
+    assert JjClient(repo).resolve_commit("@").commit_id == remote_survivor
     assert adopted.parents == (later_trunk,) != (merge_result,)
     state = state_store.load()
     assert state.prs[survivor.change_id].submitted_baseline.commit_id == remote_survivor
