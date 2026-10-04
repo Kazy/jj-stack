@@ -304,7 +304,8 @@ The command-specific planning requirements are:
 - `merge` requires the current local commit and remote PR branch ref both to equal
   `SubmittedBaseline.commit_id`, plus a live snapshot match. Tree or diff equivalence is not
   sufficient.
-- `sync --all` requires a snapshot match before retargeting, closing, or cleaning up a PR.
+- `sync --all` requires a snapshot match before retargeting or closing a PR, and
+  [trunk evidence](#trunk-evidence-and-sync) before cleaning one up.
 - cleanup requires an identity match before closing a PR, deleting artifacts, or removing saved
   links.
 
@@ -440,14 +441,27 @@ There are two ways to check that submitted work reached trunk. Both compare the 
 saved record and check commit ancestry; a PR's merged state alone does not establish that its
 work reached this repo's trunk:
 
-- **Submitted commit on trunk**: the baseline is an ancestor of trunk and the live
-  PR is a snapshot match. A PR belonging to a GitHub stack must also report merged before `sync`
-  may act on it.
-- **Selected PR's rewritten merge result on trunk**: the saved PR is an identity match, reports
-  merged, still reports the submitted head, and reports a merge-result commit that is an ancestor
-  of trunk. This covers squash and rebase results.
+- **Submitted commit on trunk**: the baseline is an ancestor of trunk, and the live PR is a
+  snapshot match or an identity match that reports merged. A PR belonging to a GitHub stack must
+  also report merged before `sync` may act on it.
+- **Submitted commit in a landed head**: the saved PR is an identity match, reports merged, and
+  its final head contains the baseline. That head landed when its merge-result commit is an
+  ancestor of trunk. A PR merged into the PR branch of another tracked merged PR lands with that
+  PR's head instead. This covers squash and rebase results, a PR branch that gained commits on
+  GitHub before the merge, and a PR merged into its parent PR's branch. GitHub's compare API
+  answers the containment check, because a squash or rebase merge leaves that head outside the
+  local history.
+- **Replaced head**: the saved PR is an identity match, reports merged, and its head landed, but
+  GitHub does not show the baseline in that head. This shows only that the PR landed.
 
-`sync` may use either result. `sync --all` uses each rewritten merge result to select and
+For a replaced head, `sync` compares the local change with trunk instead. It computes a rebase
+of the change onto trunk without changing the repo. An empty result means all of the change
+landed, so `sync` removes it like other merged work. Otherwise `sync` rebases the change, keeps
+it as local work, and removes its tracking, so a later `submit` opens a new PR for the rest.
+Overlapping edits conflict instead of reverting what landed. A kept change below a remaining
+submitted change stops `sync` before mutation, because `sync` never creates PRs.
+
+`sync` may use any of these results. `sync --all` uses each rewritten merge result to select and
 reconcile its affected local paths; it does not apply one PR's evidence to unrelated work. It
 continues with independent stacks when one is blocked. If no local copy remains, it uses that
 evidence only for ordinary cleanup, or syncs the local stack still holding the open PRs of the
@@ -455,6 +469,12 @@ same GitHub stack, which cleans up the merged PR itself. A `sync` whose selected
 saved link but no visible commit after the fetch runs only cleanup for the merged PRs of that
 change's GitHub stack. A native GitHub stack rebase without a merge requires `sync` for that
 stack; `sync --all` discovers work from merge evidence.
+
+`sync` also reconciles merged changes below the selected path in submitted history. When the
+bottom selected change's baseline has one parent that is another tracked change's baseline, that
+change is below; the walk continues from it. This covers a stack the user already rebased onto
+trunk with `jj`, or one whose merged parent reached trunk's first-parent chain. A change below
+whose PR is not merged is ignored because the user may have moved the stack off it on purpose.
 
 When an unmerged local change sits below a submitted change whose submitted commit or merge result
 is on trunk, `sync` stops without mutation. Rebasing would silently decide whether that local

@@ -114,6 +114,17 @@ changes above it. The selected PR can already be merged.
 If someone pushes a PR's submitted commit straight to trunk instead of merging the PR, `sync`
 closes that PR and cleans up, provided the PR is not part of a GitHub stack.
 
+`sync` also handles these merges done on GitHub:
+
+- A PR branch gained commits before the merge, for example from GitHub's **Update branch**
+  button.
+- Someone replaced your commit on the PR branch before the merge. If part of your change did not
+  merge, `sync` keeps that part as local work for a new pull request.
+- Outside a GitHub stack, someone merged a PR into the branch of the PR below it, and that PR
+  merged later.
+- You already rebased the remaining changes onto trunk with `jj`. `sync` still removes the
+  merged changes, cleans up their PRs, and updates the remaining PRs.
+
 If no PR has merged, no submitted commit has reached trunk, and GitHub has not rebased the stack,
 `sync` leaves the pull requests unchanged. Run `jj-stack submit` explicitly when you want to
 publish local changes.

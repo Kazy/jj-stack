@@ -81,9 +81,10 @@ class PreparedCleanup:
     dry_run: bool
     github_target: GithubTarget | UnresolvedGithubTarget
     state: TrackingState
-    # Dry-run previews assume these PRs lose their dependents and these changes leave history.
+    # Dry-run previews assume these PRs lose their dependents. Local copies of settled changes do
+    # not block cleanup: they leave history in a dry run, or sync kept them.
     preview_detached_dependents: frozenset[int] = frozenset()
-    preview_local_removals: frozenset[ChangeId] = frozenset()
+    settled_local_changes: frozenset[ChangeId] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,8 +167,13 @@ async def cleanup_tracked_prs(
     change_ids: tuple[ChangeId, ...],
     planned_detached_dependents: frozenset[int] = frozenset(),
     planned_local_removals: frozenset[ChangeId] = frozenset(),
+    kept_local_changes: frozenset[ChangeId] = frozenset(),
 ) -> bool:
-    """Run cleanup for PRs reconciled by another command, returning whether any was blocked."""
+    """Run cleanup for PRs reconciled by another command, returning whether any was blocked.
+
+    A kept local change no longer needs its merged PR's link, so its local copy does not block
+    cleanup.
+    """
 
     context = run.context
     dry_run = run.dry_run
@@ -180,7 +186,8 @@ async def cleanup_tracked_prs(
         github_target=run.target,
         state=state,
         preview_detached_dependents=planned_detached_dependents if dry_run else frozenset(),
-        preview_local_removals=planned_local_removals if dry_run else frozenset(),
+        settled_local_changes=(planned_local_removals if dry_run else frozenset())
+        | kept_local_changes,
     )
 
     def retry_hint() -> ui.Message:
@@ -556,7 +563,7 @@ def _preflight_tracked_pr_cleanup(
         return blocker
     if (
         pr.state == "merged"
-        and change_id not in prepared_cleanup.preview_local_removals
+        and change_id not in prepared_cleanup.settled_local_changes
         and any(not commit.immutable for commit in local_commits)
     ):
         pr_label = format_pr_label(pr.number, url=pr.html_url)

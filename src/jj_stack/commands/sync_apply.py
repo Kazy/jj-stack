@@ -116,6 +116,7 @@ async def apply_selected_convergence(
     return await _cleanup_reconciled_prs(
         run,
         finish_results=results,
+        kept=frozenset(item.change_id for item in actions.on_trunk if item.kept),
         remaining_prs=actions.remaining_prs,
         dependencies=dependencies,
     )
@@ -346,6 +347,7 @@ async def _cleanup_reconciled_prs(
     run: GithubRun,
     *,
     finish_results: tuple[PRFinishResult, ...],
+    kept: frozenset[ChangeId],
     remaining_prs: dict[ChangeId, GithubPR],
     dependencies: dict[ChangeId, tuple[LocalCommit, ...]],
 ) -> int:
@@ -374,6 +376,7 @@ async def _cleanup_reconciled_prs(
         change_ids=tuple(cleanup_change_ids),
         planned_detached_dependents=frozenset(pr.number for pr in remaining_prs.values()),
         planned_local_removals=frozenset(cleanup_change_ids),
+        kept_local_changes=kept,
     )
     return 1 if blocked else 0
 
@@ -388,7 +391,7 @@ def _observe_removal_dependencies(
             else change.candidate.submitted_baseline.commit_id
         )
         for change in actions.on_trunk
-        if change.evidence_kind == "rewritten"
+        if change.evidence_kind != "exact" and not change.kept
     }
     observed = dependent_path_heads(
         ancestor_commit_ids=tuple(anchors.values()),

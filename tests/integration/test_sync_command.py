@@ -25,7 +25,6 @@ from ..support.integration_helpers import (
     update_remote_ref,
     write_file,
 )
-from ..support.output_assertions import assert_output_contains
 from .submit_command_helpers import (
     configure_submit_environment,
     read_remote_ref,
@@ -350,36 +349,73 @@ def test_sync_all_explains_how_to_forget_a_deleted_workspace_blocking_removal(
     assert independent.change_id not in remaining
 
 
-def test_sync_keeps_tracking_and_names_the_recovery_when_a_merged_pr_head_changed(
+def test_sync_keeps_only_the_part_of_a_change_that_a_replaced_merged_head_left_out(
     tmp_path: Path,
     monkeypatch,
     capsys,
 ) -> None:
-    repo, fake_repo = init_fake_github_repo_with_submitted_stack(tmp_path, size=1)
+    repo, fake_repo = init_fake_github_repo_with_submitted_stack(tmp_path, size=2)
     config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
-    (submitted,) = selected_stack(repo).changes
     state_store = TrackingStore.for_repo(repo)
-    pr = fake_repo.prs[1]
-    # Someone pushed to the PR branch before GitHub squash-merged it.
-    fake_repo.force_push_pr_head(pr)
-    fake_repo.apply_squash_merge(pr)
+    first, second = selected_stack(repo).changes
+    fake_repo.github_stacks = {}
+    # Teammates pushed over both PR branches before the merges. The first push kept the change's
+    # contents; the second replaced them with another file.
+    fake_repo.force_push_pr_head(fake_repo.prs[1])
+    fake_repo.apply_squash_merge(fake_repo.prs[1])
+    fake_repo.force_push_pr_head(fake_repo.prs[2], replacement=("teammate.txt", "theirs\n"))
+    fake_repo.update_pr_base(fake_repo.prs[2], base_ref="main")
+    fake_repo.apply_squash_merge(fake_repo.prs[2])
 
-    assert run_main(repo, config_path, "sync", "--all") == 1
-    assert_output_contains(capsys.readouterr().err, "last submitted commit")
-    assert submitted.change_id in state_store.load().prs
-
-    exit_code = run_main(repo, config_path, "sync", submitted.change_id)
+    exit_code = run_main(repo, config_path, "sync", second.change_id)
     captured = capsys.readouterr()
 
-    assert exit_code == 1
-    assert "PR #1" in captured.err
-    assert f"jj abandon {short_change_id(submitted.change_id)}" in captured.err
-    assert "trunk()" not in captured.err
+    assert exit_code == 0, (captured.out, captured.err)
+    assert f"jj-stack submit {short_change_id(second.change_id)}" in captured.out
+    jj = JjClient(repo)
+    trunk = read_remote_ref(fake_repo.git_dir, "main")
+    assert jj.query_commits_by_change_ids((first.change_id,))[first.change_id] == ()
+    kept = jj.resolve_commit(second.change_id)
+    assert (kept.parents, kept.empty, kept.immutable) == ((trunk,), False, False)
+    assert state_store.load().prs == {}
 
-    # The recovery the hint names forgets the link once the local change is gone.
-    run_command(["jj", "abandon", submitted.change_id], repo)
-    assert run_main(repo, config_path, "cleanup") == 0
-    assert submitted.change_id not in state_store.load().prs
+    # The kept change needs no repair before it gets a new pull request.
+    assert run_main(repo, config_path, "submit", second.change_id) == 0, capsys.readouterr()
+    assert fake_repo.ref_target(fake_repo.prs[3].head_ref) == kept.commit_id
+
+
+def test_sync_finds_prs_merged_out_of_order_below_a_locally_rebased_change(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    repo, fake_repo = init_fake_github_repo_with_submitted_stack(tmp_path, size=3)
+    config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
+    state_store = TrackingStore.for_repo(repo)
+    first, second, third = selected_stack(repo).changes
+    # Outside a GitHub stack, merging the middle PR merges it into the bottom PR's branch. The
+    # bottom PR's head then holds both changes when GitHub squash-merges it.
+    fake_repo.github_stacks = {}
+    fake_repo.apply_merge_commit((fake_repo.prs[2],))
+    fake_repo.apply_squash_merge(fake_repo.prs[1])
+    # The author already moved the remaining change onto the new trunk with jj.
+    run_command(["jj", "git", "fetch"], repo)
+    run_command(["jj", "rebase", "-s", third.change_id, "-o", "trunk()"], repo)
+
+    exit_code = run_main(repo, config_path, "sync", third.change_id)
+    captured = capsys.readouterr()
+
+    assert exit_code == 0, (captured.out, captured.err)
+    jj = JjClient(repo)
+    remaining = jj.resolve_commit(third.change_id)
+    assert remaining.parents == (read_remote_ref(fake_repo.git_dir, "main"),)
+    assert (fake_repo.ref_target(fake_repo.prs[3].head_ref), fake_repo.prs[3].base_ref) == (
+        remaining.commit_id,
+        "main",
+    )
+    assert set(state_store.load().prs) == {third.change_id}
+    copies = jj.query_commits_by_change_ids((first.change_id, second.change_id))
+    assert copies == {first.change_id: (), second.change_id: ()}
 
 
 def test_sync_all_finishes_a_merged_pr_by_syncing_the_stack_of_its_open_prs(

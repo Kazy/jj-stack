@@ -18,7 +18,7 @@ from jj_stack.models.github import GithubPR, GithubRepo, GithubStack
 from jj_stack.models.tracking import TrackingState
 from jj_stack.stack.change_state import UNOBSERVED, TrackedPRObservation
 from jj_stack.stack.observation import StackObservation, observe_change_copies
-from jj_stack.stack.trunk_evidence import CommitAncestry
+from jj_stack.stack.trunk_evidence import CommitAncestry, landed_head_checks
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,13 +131,18 @@ async def observe_prs(
     )
 
 
-def classify_observed_commit_ancestries(
+async def classify_observed_commit_ancestries(
     *,
     context: CommandContext,
+    github: GithubClient,
     observation: RepoFacts,
     trunk_commit_id: CommitId,
 ) -> dict[CommitId, CommitAncestry]:
-    """Classify commits in one scan while keeping unavailable commits distinct."""
+    """Classify commits in one scan while keeping unavailable commits distinct.
+
+    GitHub answers only for merged PRs whose landed head differs from the submitted commit;
+    a squash or rebase merge leaves that head outside the local history.
+    """
 
     commit_ids = tuple(
         commit_id
@@ -153,10 +158,22 @@ def classify_observed_commit_ancestries(
         descendant_commit_id=trunk_commit_id,
     )
     states: dict[bool, CommitAncestry] = {True: "on_trunk", False: "not_on_trunk"}
-    return {
+    ancestries: dict[CommitId, CommitAncestry] = {
         commit_id: states[memberships[commit_id]] if commit_id in memberships else "unresolved"
         for commit_id in dict.fromkeys(commit_ids)
     }
+    checks = landed_head_checks(
+        tuple(
+            (item.tracked, item.pr) for item in observation.prs.values() if item.pr is not None
+        ),
+        ancestries,
+    )
+    contained = await github.contained_commits(checks)
+    for commit_id in checks:
+        ancestries[commit_id] = (
+            "in_landed_head" if commit_id in contained else "outside_landed_head"
+        )
+    return ancestries
 
 
 async def observe_github_stacks(*, github: GithubClient) -> tuple[GithubStack, ...]:

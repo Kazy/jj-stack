@@ -101,8 +101,9 @@ async def observe_global_sync(
     pr_observations = prs_task.result()
     stacks = stacks_task.result()
     return GlobalSyncFacts(
-        ancestries=classify_observed_commit_ancestries(
+        ancestries=await classify_observed_commit_ancestries(
             context=context,
+            github=github,
             observation=pr_observations,
             trunk_commit_id=trunk_commit_id,
         ),
@@ -146,8 +147,7 @@ def _classify_global_candidate(
     ancestry = facts.ancestries[candidate.submitted_baseline.commit_id]
     state = classify(facts.pr_facts.prs[change_id], ancestries=facts.ancestries)
     heads = _candidate_path_heads(change_id, facts=facts)
-    rewritten = isinstance(state, Landed) and state.evidence == "rewritten"
-    affected = ancestry == "on_trunk" or rewritten
+    affected = ancestry == "on_trunk" or (isinstance(state, Landed) and state.evidence != "exact")
     if affected:
         return _affected_candidate_plan(
             candidate=candidate,
@@ -199,7 +199,7 @@ def _affected_candidate_plan(
         # Syncing the stack that still holds the open PRs reads this merged PR through its saved
         # link and cleans the link up itself.
         return None, None, tuple(dependent_heads)
-    finished = state.evidence == "rewritten" or historical or state.pr.state != "open"
+    finished = state.evidence != "exact" or historical or state.pr.state != "open"
     finish = OnTrunkChange(
         change_id=state.change_id,
         candidate=candidate,

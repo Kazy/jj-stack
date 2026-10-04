@@ -52,7 +52,7 @@ from jj_stack.formatting import format_pr_label
 from jj_stack.github.client import GithubClientError
 from jj_stack.github.error_messages import require_github_target
 from jj_stack.github.resolution import resolve_github_target
-from jj_stack.identifiers import ChangeId, CommitId, is_change_id_prefix
+from jj_stack.identifiers import ChangeId, CommitId, is_change_id_prefix, short_change_id
 from jj_stack.jj.client import quote_revset_symbol
 from jj_stack.stack.convergence import (
     CheckedOutMergedChangeError,
@@ -60,8 +60,10 @@ from jj_stack.stack.convergence import (
 )
 from jj_stack.stack.convergence_models import GithubStackRebasePlan, SelectedConvergencePlan
 from jj_stack.stack.convergence_observation import (
+    changes_emptied_on_trunk,
     complete_sync_observation,
     queued_pr_numbers,
+    submitted_changes_below,
 )
 from jj_stack.stack.global_convergence import (
     build_global_convergence_plan,
@@ -293,11 +295,12 @@ async def _run_selected_convergence(run: GithubRun, *, prepared: PreparedLocalSt
         console.output("Nothing to sync: the selected change is already on trunk.")
         return 0
     complete = False
+    below = submitted_changes_below(context=context, selected=selected, state=prepared.state)
     with console.spinner(description="Inspecting pull requests") as progress:
         prs_task = asyncio.create_task(
             observe_prs(
                 branch_reads="none",
-                change_ids=tuple(change.change_id for change in selected),
+                change_ids=(*below, *(change.change_id for change in selected)),
                 context=context,
                 github_client=github,
                 github_repo_snapshot=None if run.trunk is None else run.trunk.github_repo,
@@ -313,6 +316,7 @@ async def _run_selected_convergence(run: GithubRun, *, prepared: PreparedLocalSt
         if not queued:
             progress.update("Checking PR branches")
             observation, complete = await complete_sync_observation(
+                below=below,
                 context=context,
                 github=github,
                 initial=observation,
@@ -344,13 +348,21 @@ async def _run_selected_convergence(run: GithubRun, *, prepared: PreparedLocalSt
                 trunk_commit_id=prepared.stack.trunk.commit_id,
             )
             trunk = ObservedTrunk(github_repo=observation.github_repo, branch=branch)
-        ancestries = classify_observed_commit_ancestries(
+        ancestries = await classify_observed_commit_ancestries(
             context=context,
+            github=github,
             observation=observation,
             trunk_commit_id=prepared.stack.trunk.commit_id,
         )
         plan = build_selected_convergence_plan(
             ancestries=ancestries,
+            below=below,
+            emptied=changes_emptied_on_trunk(
+                ancestries=ancestries,
+                context=context,
+                observation=observation,
+                trunk_commit_id=prepared.stack.trunk.commit_id,
+            ),
             github_stacks=observed_stacks,
             head_children=context.jj_client.query_commits(
                 f"children({quote_revset_symbol(selected[-1].commit_id)})"
@@ -377,11 +389,20 @@ def _render_selected_plan(*, dry_run: bool, plan: SelectedConvergencePlan) -> No
     if not plan.actions.on_trunk:
         console.output("No completed merges to apply to this stack.")
         return
-    status = "Would remove" if dry_run else "Removing"
-    console.output(
-        t"{status} merged changes from the bottom of the stack: "
-        t"{ui.join(lambda item: ui.change_id(item.change_id), plan.actions.on_trunk)}"
-    )
+    if removed := tuple(item for item in plan.actions.on_trunk if not item.kept):
+        status = "Would remove" if dry_run else "Removing"
+        console.output(
+            t"{status} merged changes from the bottom of the stack: "
+            t"{ui.join(lambda item: ui.change_id(item.change_id), removed)}"
+        )
+    for item in plan.actions.on_trunk:
+        if item.kept:
+            command = f"jj-stack submit {short_change_id(item.change_id)}"
+            console.output(
+                t"{'Would keep' if dry_run else 'Keeping'} {ui.change_id(item.change_id)} as "
+                t"local work: its merged pull request did not include all of its changes. Run "
+                t"{ui.cmd(command)} to open a new pull request for them."
+            )
 
 
 def _checked_out_workspace_hint(

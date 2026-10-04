@@ -90,6 +90,10 @@ class _RestErrorBody(BaseModel):
     errors: tuple[_RestErrorDetail, ...] = ()
 
 
+class _RestCommitComparison(BaseModel):
+    status: str
+
+
 class GithubClientError(SummarizedError):
     """Raised when a GitHub request fails or returns an unusable response."""
 
@@ -515,6 +519,32 @@ class GithubClient:
         if pr is None:
             raise GithubClientError(f"GitHub has no pull request #{pr_number}.")
         return pr
+
+    async def contained_commits(
+        self,
+        pairs: Mapping[CommitId, CommitId],
+    ) -> set[CommitId]:
+        """Return each commit GitHub reports in the history of the head it is paired with."""
+
+        contained: set[CommitId] = set()
+
+        async def compare(commit_id: CommitId, head: CommitId) -> None:
+            response = await self._request(
+                "GET", f"{self._repo_path}/compare/{commit_id}...{head}?per_page=1"
+            )
+            # GitHub no longer holds one of the commits, so it shows no containment.
+            if response.status_code == 404:
+                return
+            comparison = _response_model(
+                response, model=_RestCommitComparison, response_name="commit comparison"
+            )
+            if comparison.status in ("ahead", "identical"):
+                contained.add(commit_id)
+
+        await wait_for_read_tasks(
+            *(asyncio.create_task(compare(commit_id, head)) for commit_id, head in pairs.items())
+        )
+        return contained
 
     async def get_prs_by_numbers(
         self,

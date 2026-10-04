@@ -888,12 +888,32 @@ class JjClient:
     ) -> str:
         """Compute a rebase in an unintegrated operation and return its operation ID."""
 
+        return self._prepare_rebase(change_ids_revset(change_ids), destination=destination)
+
+    def prepare_rebase_commits(
+        self,
+        *,
+        commit_ids: Sequence[CommitId],
+        destination: CommitId,
+    ) -> str:
+        """Compute a rebase of exact commits in an unintegrated operation; return its ID.
+
+        Naming commits rather than changes leaves out other copies of the same change, such as
+        one already on trunk.
+        """
+
+        if not commit_ids:
+            raise ValueError("speculative rebase requires at least one commit")
+        revset = " | ".join(quote_revset_symbol(commit_id) for commit_id in commit_ids)
+        return self._prepare_rebase(revset, destination=destination)
+
+    def _prepare_rebase(self, revset: str, *, destination: CommitId) -> str:
         output = self._run_jj(
             (
                 "--no-integrate-operation",
                 "rebase",
                 "-r",
-                change_ids_revset(change_ids),
+                revset,
                 "-d",
                 destination,
             ),

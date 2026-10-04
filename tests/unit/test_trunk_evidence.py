@@ -34,20 +34,31 @@ def _pr(**updates: object) -> GithubPR:
     return pr.model_copy(update=updates)
 
 
-def _moved_head() -> GithubPR:
+def _moved_head(**updates: object) -> GithubPR:
     return _pr(
-        head=GithubPRHead(label="octo-org:jj-stack/change-1", ref="jj-stack/change-1", sha="x")
+        head=GithubPRHead(label="octo-org:jj-stack/change-1", ref="jj-stack/change-1", sha="x"),
+        **updates,
     )
 
 
 @pytest.mark.merge_recovery
-def test_trunk_evidence_needs_the_pr_head_at_the_submitted_commit_and_a_result_on_trunk() -> None:
+def test_trunk_evidence_needs_the_submitted_commit_in_what_landed() -> None:
     merged = _pr(state="merged", merge_commit_sha="merge-1")
+    merged_moved = _moved_head(state="merged", merge_commit_sha="merge-1")
     rows: tuple[tuple[GithubPR, CommitAncestry, CommitAncestry | None, str | None], ...] = (
         (_pr(), "on_trunk", None, "exact"),
         (_pr(), "not_on_trunk", None, None),
         (_pr(), "unresolved", None, None),
+        (_pr(), "in_landed_head", None, None),
         (_moved_head(), "on_trunk", None, None),
+        # GitHub's update-branch merge moves the head; a merge commit still lands the original.
+        (merged_moved, "on_trunk", None, "exact"),
+        (merged_moved, "in_landed_head", None, "rewritten"),
+        # The PR landed, but only the local change's contents can show what of it landed.
+        (merged_moved, "outside_landed_head", None, "replaced"),
+        (_moved_head(), "outside_landed_head", None, None),
+        # A moved head that GitHub does not show containing the commit proves nothing.
+        (merged_moved, "not_on_trunk", "on_trunk", None),
         (_pr(state="merged"), "not_on_trunk", None, None),
         (merged, "not_on_trunk", "unresolved", None),
         (merged, "not_on_trunk", "not_on_trunk", None),

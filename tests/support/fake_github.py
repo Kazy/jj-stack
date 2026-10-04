@@ -880,18 +880,29 @@ class FakeGithubRepo:
             stdin=f"{entries}\n100644 blob {blob}\t{path}\n",
         )
 
-    def force_push_pr_head(self, pr: FakeGithubPR) -> str:
-        """Rewrite one PR head externally while preserving its jj change ID."""
+    def force_push_pr_head(
+        self, pr: FakeGithubPR, *, replacement: tuple[str, str] | None = None
+    ) -> str:
+        """Rewrite one PR head externally while preserving its jj change ID.
+
+        A `(path, contents)` replacement makes the rewrite add only that file to the parent,
+        dropping the change's own contents.
+        """
 
         head = self.ref_target(pr.head_ref)
         if head is None:
             raise AssertionError(f"Missing fake GitHub branch {pr.head_ref}")
         parent = self._run_backing_git("rev-parse", f"{head}^")
+        tree = None
+        if replacement is not None:
+            parent_tree = self._run_backing_git("rev-parse", f"{parent}^{{tree}}")
+            tree = self._tree_with_file(parent_tree, path=replacement[0], contents=replacement[1])
         rewritten = self._replay_commit(
             commit_id=head,
             extra_header="x-fake-force-push true",
             message_suffix="\nexternal rewrite",
             parent_commit_id=parent,
+            tree_id=tree,
         )
         self._run_backing_git(
             "update-ref",
@@ -1100,6 +1111,15 @@ def _register_repo_routes(app: FastAPI, fake_repo: FakeGithubRepo) -> None:
     @app.get("/repos/{owner}/{repo_name}")
     async def get_repo(owner: str, repo_name: str) -> dict[str, object]:
         return _get_repo(fake_repo, owner, repo_name).to_payload()
+
+    @app.get("/repos/{owner}/{repo_name}/compare/{basehead}")
+    async def compare_commits(owner: str, repo_name: str, basehead: str) -> dict[str, object]:
+        # Only the ancestry status is modeled; GitHub also reports "behind" and commit lists.
+        repo = _get_repo(fake_repo, owner, repo_name)
+        base, _, head = basehead.partition("...")
+        if base == head:
+            return {"status": "identical"}
+        return {"status": "ahead" if repo.is_ancestor(base, head) else "diverged"}
 
 
 def _register_github_stack_routes(app: FastAPI, fake_repo: FakeGithubRepo) -> None:

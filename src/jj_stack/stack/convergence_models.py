@@ -19,6 +19,8 @@ class OnTrunkChange:
     # The still-open PR to close, or None when GitHub already finished it or rewrote it.
     close_pr: GithubPR | None
     change: LocalCommit | None
+    # Part of the change did not land, so sync keeps it as local work without a saved link.
+    kept: bool = False
 
 
 @dataclass(frozen=True, slots=True)

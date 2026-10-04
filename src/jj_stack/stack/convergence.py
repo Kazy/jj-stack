@@ -8,7 +8,6 @@ from jj_stack.formatting import format_pr_label
 from jj_stack.identifiers import ChangeId, CommitId, short_change_id
 from jj_stack.models.github import GithubPR, GithubStack, GithubStackPR
 from jj_stack.models.stack import LocalCommit
-from jj_stack.models.tracking import TrackedPR
 from jj_stack.stack.change_state import (
     BranchDisagrees,
     BranchMissing,
@@ -62,6 +61,8 @@ type _GithubStackEffect = _GithubStackMerge | _GithubStackRebase | None
 def build_selected_convergence_plan(
     *,
     ancestries: dict[CommitId, CommitAncestry],
+    below: tuple[ChangeId, ...],
+    emptied: frozenset[ChangeId],
     github_stacks: tuple[GithubStack, ...],
     head_children: tuple[LocalCommit, ...],
     observation: RepoFacts,
@@ -84,6 +85,24 @@ def build_selected_convergence_plan(
     history_ids = {item.change_id for item in history}
     active_ids = {item.change_id for item in adopted}
     on_trunk = list(history)
+    # An unmerged change below may have been left out of the stack on purpose.
+    on_trunk.extend(
+        _historical_member(
+            _member_state(
+                change_id=change_id,
+                ancestries=ancestries,
+                observation=observation,
+                rerun=rerun,
+                selected=None,
+            ),
+            head=head,
+            selected=None,
+        )
+        for change_id in below
+        if change_id not in history_ids
+        and (pr := observation.prs[change_id].pr) is not None
+        and pr.state == "merged"
+    )
     remaining_changes: list[LocalCommit] = []
     surviving_prs = {item.change_id: item.pr for item in adopted}
     for change in (item for item in selected if item.change_id not in history_ids):
@@ -104,7 +123,7 @@ def build_selected_convergence_plan(
             raise CliError(
                 t"Cannot remove {ui.change_id(change.change_id)}: "
                 t"{trunk_evidence_reason(change_state)}.",
-                hint=_trunk_evidence_hint(change_state, rerun=rerun),
+                hint=_trunk_evidence_hint(rerun=rerun),
             )
         if not isinstance(change_state, Landed):
             remaining_changes.append(change)
@@ -142,10 +161,22 @@ def build_selected_convergence_plan(
             )
         )
 
+    on_trunk = [
+        replace(item, change=None, kept=True)
+        if item.evidence_kind == "replaced"
+        and item.change is not None
+        and item.change_id not in emptied
+        else item
+        for item in on_trunk
+    ]
+    kept = {item.change_id for item in on_trunk if item.kept}
+    remaining_changes = [
+        change for change in selected if change.change_id in kept or change in remaining_changes
+    ]
     _require_no_unpublished_edits(tuple(on_trunk), head=head)
     _require_no_checked_out_merged_changes(tuple(on_trunk))
     submitted = _remaining_submitted_prs(
-        remaining_changes=tuple(remaining_changes), prs=surviving_prs, head=head
+        remaining_changes=tuple(remaining_changes), prs=surviving_prs, head=head, kept=kept
     )
     local_head = selected[-1]
     working_copy_children = tuple(
@@ -179,23 +210,34 @@ def _remaining_submitted_prs(
     remaining_changes: tuple[LocalCommit, ...],
     prs: dict[ChangeId, GithubPR],
     head: str,
+    kept: set[ChangeId],
 ) -> dict[ChangeId, GithubPR]:
     """Return the remaining submitted PRs; unsubmitted changes must come after them."""
 
     submitted: dict[ChangeId, GithubPR] = {}
-    saw_unsubmitted = False
+    unsubmitted: ChangeId | None = None
     for change in remaining_changes:
         if (pr := prs.get(change.change_id)) is None:
-            saw_unsubmitted = True
+            unsubmitted = unsubmitted or change.change_id
             continue
-        if saw_unsubmitted:
+        if unsubmitted is None:
+            submitted[change.change_id] = pr
+            continue
+        if unsubmitted in kept:
+            short = short_change_id(unsubmitted)
             raise CliError(
-                t"Cannot sync because submitted {ui.change_id(change.change_id)} appears "
-                t"above an unsubmitted change.",
-                hint=t"Submit the complete stack with {ui.cmd(f'jj-stack submit {head}')}, or "
-                t"select a stack that ends below the unsubmitted change.",
+                t"Cannot sync: {ui.change_id(unsubmitted)} has changes its merged pull request "
+                t"did not include, and submitted {ui.change_id(change.change_id)} is above it.",
+                hint=t"Move what is left into another change with "
+                t"{ui.cmd(f'jj squash --from {short} --into <change-id>')}, or drop it with "
+                t"{ui.cmd(f'jj abandon {short}')}. Then rerun {ui.cmd(f'jj-stack sync {head}')}.",
             )
-        submitted[change.change_id] = pr
+        raise CliError(
+            t"Cannot sync because submitted {ui.change_id(change.change_id)} appears "
+            t"above an unsubmitted change.",
+            hint=t"Submit the complete stack with {ui.cmd(f'jj-stack submit {head}')}, or "
+            t"select a stack that ends below the unsubmitted change.",
+        )
     return submitted
 
 
@@ -338,12 +380,7 @@ def _classify_github_stack(
         if member.is_historical:
             history.append(
                 _historical_member(
-                    candidate=candidate,
-                    change_id=change_id,
-                    head=head,
-                    member_state=member_state,
-                    observation=observation,
-                    selected=selected_by_id.get(change_id),
+                    member_state, head=head, selected=selected_by_id.get(change_id)
                 )
             )
             merge_result = pr.merge_commit_sha
@@ -383,19 +420,13 @@ def _classify_github_stack(
 
 
 def _historical_member(
-    *,
-    candidate: TrackedPR,
-    change_id: ChangeId,
-    head: str,
-    member_state: WithPR,
-    observation: RepoFacts,
-    selected: LocalCommit | None,
+    member_state: WithPR, *, head: str, selected: LocalCommit | None
 ) -> OnTrunkChange:
-    """Turn a merged stack member into its on-trunk entry, or stop when it cannot be removed."""
+    """Turn a merged change outside the selected path into its on-trunk entry, or stop when it
+    cannot be removed."""
 
-    mutable_copies = tuple(
-        item for item in observation.prs[change_id].local if not item.immutable
-    )
+    change_id = member_state.change_id
+    mutable_copies = tuple(item for item in member_state.local if not item.immutable)
     if selected is None and len(mutable_copies) > 1:
         raise CliError(
             t"Merged change {ui.change_id(change_id)} from this stack has more than "
@@ -410,34 +441,23 @@ def _historical_member(
         raise CliError(
             t"Cannot remove the saved link for merged {pr_label}: "
             t"{trunk_evidence_reason(member_state)}.",
-            hint=_trunk_evidence_hint(member_state, rerun=f"jj-stack sync {head}"),
+            hint=_trunk_evidence_hint(rerun=f"jj-stack sync {head}"),
         )
     return OnTrunkChange(
         change_id,
-        candidate,
+        member_state.tracked,
         member_state.evidence,
         None,
         selected or (mutable_copies[0] if mutable_copies else None),
     )
 
 
-def _trunk_evidence_hint(state: WithPR, *, rerun: str) -> ui.Message:
-    """Say how to resolve a merged PR whose work jj-stack cannot place on trunk."""
+def _trunk_evidence_hint(*, rerun: str) -> ui.Message:
+    """Say how to resolve a merged PR whose work did not reach this repo's trunk."""
 
-    if state.pr.head.sha == state.tracked.submitted_baseline.commit_id:
-        return (
-            t"Check that {ui.revset('trunk()')} selects the branch the PR merged into, then "
-            t"rerun {ui.cmd(rerun)}."
-        )
-    pr_label = format_pr_label(state.pr.number, url=state.pr.html_url)
-    short = short_change_id(state.change_id)
     return (
-        t"{pr_label} merged from commit {ui.commit_id(state.pr.head.sha)}, not from the commit "
-        t"jj-stack pushed, so jj-stack cannot tell whether this change is part of what merged. "
-        t"Check the files {pr_label} changed on GitHub against {ui.cmd(f'jj diff -r {short}')}. "
-        t"If this change is in them, run {ui.cmd(f'jj abandon {short}')} and then "
-        t"{ui.cmd('jj-stack cleanup')}; if not, run "
-        t"{ui.cmd(f'jj-stack unstack --local {short}')} and submit again."
+        t"Check that {ui.revset('trunk()')} selects the branch the PR merged into, then "
+        t"rerun {ui.cmd(rerun)}."
     )
 
 
@@ -500,7 +520,12 @@ def _unmatched_rewrite_error(stack: GithubStack, *, head: str) -> CliError:
 def _require_no_unpublished_edits(changes: tuple[OnTrunkChange, ...], *, head: str) -> None:
     for item in changes:
         local, baseline = item.change, item.candidate.submitted_baseline.commit_id
-        if local is None or not local.holds_unpublished_edit(baseline):
+        # A removed `replaced` change was empty when rebased onto trunk, edits included.
+        if (
+            local is None
+            or item.evidence_kind == "replaced"
+            or not local.holds_unpublished_edit(baseline)
+        ):
             continue
         short = short_change_id(local.change_id)
         raise CliError(

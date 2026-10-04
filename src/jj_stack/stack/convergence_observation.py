@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import replace
 
 from jj_stack.bootstrap import CommandContext
 from jj_stack.concurrency import wait_for_read_tasks
 from jj_stack.github.client import GithubClient
 from jj_stack.identifiers import ChangeId, CommitId
+from jj_stack.jj.cli_args import JjCliArgs
 from jj_stack.models.github import GithubStack
 from jj_stack.models.stack import LocalCommit
 from jj_stack.models.tracking import TrackingState
@@ -18,10 +20,79 @@ from jj_stack.stack.pr_facts import (
     observe_prs,
 )
 from jj_stack.stack.repo import observe_repo_paths
+from jj_stack.stack.trunk_evidence import CommitAncestry
+
+
+def submitted_changes_below(
+    *, context: CommandContext, selected: tuple[LocalCommit, ...], state: TrackingState
+) -> tuple[ChangeId, ...]:
+    """Tracked changes under the bottom selected change in submitted history, nearest first.
+
+    Rebasing a stack onto trunk with `jj` after a merge removes the merged change from the local
+    path, but the submitted commits still record which tracked change was below.
+    """
+
+    selected_ids = {change.change_id for change in selected}
+    by_submitted = {
+        tracked.submitted_baseline.commit_id: change_id
+        for change_id, tracked in state.prs.items()
+        if change_id not in selected_ids
+    }
+    if not by_submitted or (bottom := state.prs.get(selected[0].change_id)) is None:
+        return ()
+    start = bottom.submitted_baseline.commit_id
+    commits = {
+        item.commit_id: item
+        for item in context.jj_client.query_commits_by_ids((start, *by_submitted))
+    }
+    below: list[ChangeId] = []
+    commit = commits.get(start)
+    # Submitted history is acyclic, so each step moves to a new tracked change.
+    while commit is not None and len(commit.parents) == 1 and commit.parents[0] in by_submitted:
+        below.append(by_submitted[commit.parents[0]])
+        commit = commits.get(commit.parents[0])
+    return tuple(below)
+
+
+def changes_emptied_on_trunk(
+    *,
+    ancestries: Mapping[CommitId, CommitAncestry],
+    context: CommandContext,
+    observation: RepoFacts,
+    trunk_commit_id: CommitId,
+) -> frozenset[ChangeId]:
+    """Changes whose PR landed from a replaced head and whose local copy adds nothing to trunk.
+
+    A speculative rebase onto trunk answers without changing the repo. An overlapping edit
+    conflicts rather than reverting what landed, so a conflicted copy is never empty.
+    """
+
+    copies = {
+        change_id: mutable[0]
+        for change_id, item in observation.prs.items()
+        if ancestries.get(item.tracked.submitted_baseline.commit_id) == "outside_landed_head"
+        and len(mutable := tuple(copy for copy in item.local if not copy.immutable)) == 1
+    }
+    if not copies:
+        return frozenset()
+    operation_id = context.jj_client.prepare_rebase_commits(
+        commit_ids=tuple(copy.commit_id for copy in copies.values()),
+        destination=trunk_commit_id,
+    )
+    rebased = context.jj_client.query_commits_by_change_ids(
+        tuple(copies), cli_args=JjCliArgs((f"--at-op={operation_id}",))
+    )
+    return frozenset(
+        change_id
+        for change_id, commits in rebased.items()
+        if (moved := tuple(commit for commit in commits if not commit.immutable))
+        and all(commit.empty for commit in moved)
+    )
 
 
 async def complete_sync_observation(
     *,
+    below: tuple[ChangeId, ...],
     context: CommandContext,
     github: GithubClient,
     initial: RepoFacts,
@@ -40,8 +111,8 @@ async def complete_sync_observation(
     tracked_prs = {tracked.pr_identity.pr_number for tracked in state.prs.values()}
     if not any(
         _pr_changed(observed, include_remote_target=False)
-        for change in selected
-        if (observed := initial.prs.get(change.change_id)) is not None
+        for change_id in (*below, *(change.change_id for change in selected))
+        if (observed := initial.prs.get(change_id)) is not None
     ) and (resource_prs & tracked_prs).issubset(selected_prs):
         return initial, False
     change_ids = tuple(

@@ -175,7 +175,10 @@ class Queued(WithPR):
 
 @dataclass(frozen=True, kw_only=True)
 class Landed(WithPR):
-    """PR and ancestry checks confirm that the submitted work reached trunk."""
+    """PR and ancestry checks confirm that the PR landed on trunk.
+
+    With `replaced` evidence, the PR landed from a head without the submitted commit.
+    """
 
     evidence: TrunkEvidenceKind
 
