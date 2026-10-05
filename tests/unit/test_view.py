@@ -40,11 +40,7 @@ def _pr(*, base_ref: str = "main", number: int, state: PRState) -> GithubPR:
     )
 
 
-def _status_result(
-    *,
-    changes: tuple[StackStatusChange, ...],
-    selected_revset: str = "@",
-) -> StatusResult:
+def _status_result(*, changes: tuple[StackStatusChange, ...]) -> StatusResult:
     return StatusResult(
         changes=changes,
         github_error=None,
@@ -52,7 +48,6 @@ def _status_result(
         incomplete=False,
         remote=None,
         remote_error=None,
-        selected_revset=selected_revset,
     )
 
 
@@ -293,7 +288,7 @@ def test_view_keeps_short_sync_advice_above_a_moved_stack(with_submitted_child: 
         )
     lines = _render_lines(
         *view_module.render_status_advisory_lines(
-            result=_status_result(changes=changes, selected_revset=head_id),
+            result=_status_result(changes=changes),
         )
     )
     normalized = " ".join(" ".join(line.split()) for line in lines)

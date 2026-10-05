@@ -82,7 +82,6 @@ class StatusResult:
     remote: GitRemote | None
     remote_error: ErrorMessage | None
     changes: tuple[StackStatusChange, ...]
-    selected_revset: str
 
 
 def observe_status(
@@ -156,7 +155,6 @@ def build_status_result(
         remote=target.remote,
         remote_error=target.remote_error,
         changes=tuple(changes),
-        selected_revset=prepared.stack.selected_revset,
     )
 
 
