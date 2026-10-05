@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from jj_stack.errors import TrackingStateError
+from jj_stack.errors import CliError
 from jj_stack.models.tracking import TrackingState
 
 
@@ -15,7 +15,7 @@ def migrate_tracking_state(raw: dict[str, object]) -> dict[str, object]:
     if type(version) is not int:
         raise ValueError("tracking schema version must be an integer")
     if version > (current_version := TrackingState().version):
-        raise TrackingStateError(
+        raise CliError(
             f"Tracking data uses format version {version}, which is newer than supported "
             f"version {current_version}.",
             hint="Upgrade jj-stack to read this tracking data.",

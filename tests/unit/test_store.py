@@ -7,9 +7,10 @@ from pathlib import Path
 
 import pytest
 
+from jj_stack.errors import CliError
 from jj_stack.identifiers import ChangeId
 from jj_stack.models.tracking import PRIdentity, SubmittedBaseline, TrackedPR, TrackingState
-from jj_stack.state.store import TrackingStateError, TrackingStore
+from jj_stack.state.store import TrackingStore
 
 CHANGE_ID = ChangeId("abcdefghijklmno")
 OTHER_CHANGE_ID = "qrstuvwxyzabcde"
@@ -87,7 +88,7 @@ def test_atomic_relink_failure_preserves_original_pair(
 
     monkeypatch.setattr(Path, "replace", fail_replace)
 
-    with pytest.raises(TrackingStateError, match="simulated replace failure"):
+    with pytest.raises(CliError, match="simulated replace failure"):
         store.relink_pr(
             CHANGE_ID,
             identity=PRIdentity(
@@ -122,7 +123,7 @@ def test_store_rejects_invalid_complete_file(tmp_path: Path, mutate) -> None:
     mutate(state)
     state_path.write_text(json.dumps(state), encoding="utf-8")
 
-    with pytest.raises(TrackingStateError, match="Invalid jj-stack data") as caught:
+    with pytest.raises(CliError, match="Invalid jj-stack data") as caught:
         TrackingStore(state_path).load()
 
     assert caught.value.hint is not None
@@ -134,7 +135,7 @@ def test_store_rejects_newer_schema_with_upgrade_guidance(tmp_path: Path) -> Non
     rendered = '{"version": 9}\n'
     state_path.write_text(rendered, encoding="utf-8")
 
-    with pytest.raises(TrackingStateError, match="newer than supported version 8") as caught:
+    with pytest.raises(CliError, match="newer than supported version 8") as caught:
         TrackingStore(state_path).load()
 
     assert caught.value.hint is not None

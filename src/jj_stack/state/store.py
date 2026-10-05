@@ -13,7 +13,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 import jj_stack.ui as ui
-from jj_stack.errors import TrackingStateError
+from jj_stack.errors import CliError
 from jj_stack.identifiers import ChangeId
 from jj_stack.models.tracking import (
     PRIdentity,
@@ -48,7 +48,7 @@ class TrackingStore:
         except FileNotFoundError:
             return False
         except OSError as error:
-            raise TrackingStateError(
+            raise CliError(
                 f"Could not inspect jj-stack data path {self.path}: {error}"
             ) from error
         self.load()
@@ -137,15 +137,13 @@ class TrackingStore:
                 Path(tmp_name).unlink(missing_ok=True)
                 raise
         except OSError as error:
-            raise TrackingStateError(
-                f"Could not write jj-stack data file {self.path}: {error}"
-            ) from error
+            raise CliError(f"Could not write jj-stack data file {self.path}: {error}") from error
         return state
 
-    def _invalid_state_error(self, message: str) -> TrackingStateError:
+    def _invalid_state_error(self, message: str) -> CliError:
         backup_path = self.path.with_name(f"{self.path.name}.bak")
         move_command = f"mv -i {shlex.quote(str(self.path))} {shlex.quote(str(backup_path))}"
-        return TrackingStateError(
+        return CliError(
             message,
             hint=(
                 t"Move the file aside with {ui.cmd(move_command)}, then relink pull requests "
@@ -176,11 +174,9 @@ def _resolve_repo_storage_root(repo_root: Path) -> Path:
         try:
             target = repo_path.read_text(encoding="utf-8").strip()
         except OSError as error:
-            raise TrackingStateError(
-                f"Could not read jj repo path file {repo_path}: {error}"
-            ) from error
+            raise CliError(f"Could not read jj repo path file {repo_path}: {error}") from error
         if not target:
-            raise TrackingStateError(f"jj repo path file is empty: {repo_path}")
+            raise CliError(f"jj repo path file is empty: {repo_path}")
         repo_path = repo_path.parent / target
     return repo_path.resolve()
 

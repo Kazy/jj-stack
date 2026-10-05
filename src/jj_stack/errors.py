@@ -98,10 +98,6 @@ class CliError(RuntimeError):
         return f"{message} {hint}"
 
 
-class TrackingStateError(CliError):
-    """Tracking data is unreadable or invalid."""
-
-
 class UsageError(CliError):
     """Invalid command-line arguments or flag combinations."""
 
