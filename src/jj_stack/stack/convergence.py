@@ -8,7 +8,7 @@ from jj_stack.formatting import format_pr_label
 from jj_stack.identifiers import ChangeId, CommitId, short_change_id
 from jj_stack.models.github import GithubPR, GithubStack, GithubStackPR
 from jj_stack.models.stack import LocalCommit
-from jj_stack.models.tracking import TrackedPR, TrackingState
+from jj_stack.models.tracking import TrackedPR
 from jj_stack.stack.change_state import (
     BranchDisagrees,
     BranchMissing,
@@ -75,10 +75,8 @@ def build_selected_convergence_plan(
     effect = _classify_github_stack(
         ancestries=ancestries,
         github_stacks=github_stacks,
-        head=head,
         observation=observation,
-        selected=selected,
-        state=state,
+        prepared=prepared,
         trunk_branch=trunk_branch,
     )
     history = effect.history if isinstance(effect, _GithubStackMerge) else ()
@@ -286,12 +284,13 @@ def _classify_github_stack(
     *,
     ancestries: dict[CommitId, CommitAncestry],
     github_stacks: tuple[GithubStack, ...],
-    head: str,
     observation: RepoFacts,
-    selected: tuple[LocalCommit, ...],
-    state: TrackingState,
+    prepared: PreparedLocalStack,
     trunk_branch: str,
 ) -> _GithubStackEffect:
+    selected = prepared.stack.changes
+    state = prepared.state
+    head = short_change_id(selected[-1].change_id)
     selected_by_id: dict[ChangeId, LocalCommit] = {
         change.change_id: change for change in selected
     }
