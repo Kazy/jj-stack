@@ -60,10 +60,10 @@ class TrackingStore:
         *,
         identity: PRIdentity,
         baseline: SubmittedBaseline,
-    ) -> TrackingState:
+    ) -> None:
         """Atomically replace one complete pull request record."""
 
-        return self.relink_prs(
+        self.relink_prs(
             replacements={change_id: TrackedPR(pr_identity=identity, submitted_baseline=baseline)}
         )
 
@@ -71,12 +71,12 @@ class TrackingStore:
         self,
         *,
         replacements: Mapping[ChangeId, TrackedPR],
-    ) -> TrackingState:
+    ) -> None:
         """Atomically replace complete pull request records."""
 
         for change_id, tracked in replacements.items():
             _require_identity_matches_change(tracked.pr_identity, change_id)
-        return self._persist(TrackingState(prs={**self.load().prs, **replacements}))
+        self._persist(TrackingState(prs={**self.load().prs, **replacements}))
 
     def remove_pr(self, change_id: ChangeId) -> None:
         """Atomically remove one complete pull request record."""
@@ -120,7 +120,7 @@ class TrackingStore:
             ) from error
         return state
 
-    def _persist(self, state: TrackingState) -> TrackingState:
+    def _persist(self, state: TrackingState) -> None:
         rendered = state.model_dump_json(exclude_none=True, indent=2) + "\n"
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -138,7 +138,6 @@ class TrackingStore:
                 raise
         except OSError as error:
             raise CliError(f"Could not write jj-stack data file {self.path}: {error}") from error
-        return state
 
     def _invalid_state_error(self, message: str) -> CliError:
         backup_path = self.path.with_name(f"{self.path.name}.bak")
