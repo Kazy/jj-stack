@@ -168,7 +168,7 @@ def _observation(
         candidate_commit_ids=frozenset(
             commit.commit_id for commit in commits if commit.commit_id != trunk.commit_id
         ),
-        current_working_copy_commit_id=None,
+        current_working_copy=None,
         trunk_first_parent_ids=trunk_first_parent_ids or frozenset({trunk.commit_id}),
         commits=commits,
         selected_revset=head.change_id,

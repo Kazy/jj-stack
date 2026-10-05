@@ -280,9 +280,9 @@ def _project_rows(
             t"Revset {ui.revset(selected_revset)} did not resolve to a visible commit.",
             hint=t"List the visible changes with {ui.cmd('jj log')}, then select one of them.",
         )
-    current_working_copy_commit_id = (
+    current_working_copy = (
         next(
-            (commit.commit_id for commit in candidates if commit.current_working_copy),
+            (commit for commit in candidates if commit.current_working_copy),
             None,
         )
         if use_default
@@ -314,7 +314,7 @@ def _project_rows(
             candidate_commit_ids=frozenset(
                 row.commit.commit_id for row in rows if row.is_candidate
             ),
-            current_working_copy_commit_id=current_working_copy_commit_id,
+            current_working_copy=current_working_copy,
             trunk_first_parent_ids=frozenset(
                 row.commit.commit_id for row in rows if row.is_trunk_path
             ),

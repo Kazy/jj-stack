@@ -16,7 +16,7 @@ class SelectedPathObservation:
     """Immutable facts needed to derive one selected parent path."""
 
     candidate_commit_ids: frozenset[CommitId]
-    current_working_copy_commit_id: CommitId | None
+    current_working_copy: LocalCommit | None
     trunk_first_parent_ids: frozenset[CommitId]
     commits: tuple[LocalCommit, ...]
     selected_revset: str
@@ -184,17 +184,8 @@ def _ordinary_candidates(
 
 def _select_commit(observation: SelectedPathObservation) -> LocalCommit:
     candidates = tuple(sorted(observation.selector_commits, key=lambda commit: commit.commit_id))
-    if observation.current_working_copy_commit_id is not None:
-        current = next(
-            (
-                commit
-                for commit in candidates
-                if commit.commit_id == observation.current_working_copy_commit_id
-            ),
-            None,
-        )
-        if current is None:
-            raise ValueError("Current working copy is absent from the selected observation.")
+    current = observation.current_working_copy
+    if current is not None:
         if not current.has_described_work:
             if len(current.parents) != 1:
                 raise ValueError("Default selection has no ordinary parent.")
