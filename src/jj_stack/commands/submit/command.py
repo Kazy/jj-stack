@@ -264,21 +264,6 @@ def _recover_interrupted_first_submissions(
     return recovered
 
 
-def _submit_pr_branches(
-    *,
-    base_branch: str | None,
-    resolutions: tuple[ResolvedPRBranch, ...],
-) -> tuple[str, ...]:
-    return tuple(
-        dict.fromkeys(
-            (
-                *(resolution.branch for resolution in resolutions),
-                *((base_branch,) if base_branch is not None else ()),
-            )
-        )
-    )
-
-
 def _submit_remote_branch_queries(
     *,
     base_branch: str | None,
@@ -475,10 +460,7 @@ async def _observe_submit(
         tracked_prs=state.prs,
     )
     visible_bookmarks = client.visible_pr_bookmark_targets()
-    initial_pr_branches = _submit_pr_branches(
-        base_branch=base_branch,
-        resolutions=branch_resolutions,
-    )
+    initial_pr_branches = tuple(resolution.branch for resolution in branch_resolutions)
     exact_remote_branches, recovery_suffixes = _submit_remote_branch_queries(
         base_branch=base_branch,
         resolutions=branch_resolutions,
@@ -578,12 +560,8 @@ async def _observe_submit(
                 hint=t"Rename or forget that bookmark, then retry; jj-stack reserves the PR "
                 t"branch prefix for its own branches.",
             )
-        pr_branches = _submit_pr_branches(
-            base_branch=base_branch,
-            resolutions=branch_resolutions,
-        )
         lookups = lookups_task.result()
-        if pr_branches != initial_pr_branches:
+        if tuple(resolution.branch for resolution in branch_resolutions) != initial_pr_branches:
             lookups = await read_or_stop(
                 discover_pr_lookups(
                     github_client=github_client,
