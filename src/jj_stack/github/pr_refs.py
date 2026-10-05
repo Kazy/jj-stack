@@ -54,9 +54,7 @@ def parse_pr_number(reference: str) -> int | None:
 def parse_repo_pr_reference(
     *,
     github_repo: GithubRepoAddress,
-    invalid_reference_message: str | None = None,
     reference: str,
-    wrong_repo_message: str | None = None,
 ) -> int:
     parsed = parse_pr_number(reference)
     if parsed is not None:
@@ -70,18 +68,12 @@ def parse_repo_pr_reference(
     )
     if match is None:
         raise UsageError(
-            invalid_reference_message
-            or (
-                f"Pull request reference {reference} is not a pull request number "
-                f"or URL for {github_repo.full_name}."
-            )
+            f"Pull request reference {reference} is not a pull request number "
+            f"or URL for {github_repo.full_name}."
         )
     if (match["owner"], match["repo"]) != (github_repo.owner, github_repo.repo):
         raise UsageError(
-            wrong_repo_message
-            or (
-                f"Pull request URL {reference} does not match configured repo "
-                f"{github_repo.full_name}."
-            )
+            f"Pull request URL {reference} does not match configured repo "
+            f"{github_repo.full_name}."
         )
     return int(match["number"])

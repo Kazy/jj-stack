@@ -120,14 +120,7 @@ async def _run_relink_async(
     change = stack.head
     remote = select_submit_remote(client.list_git_remotes())
     repo = require_github_repo(remote)
-    pr_number = parse_repo_pr_reference(
-        reference=pr_reference,
-        github_repo=repo,
-        invalid_reference_message=(
-            f"{pr_reference} is not a pull request number or URL for {repo.full_name}."
-        ),
-        wrong_repo_message=(f"{pr_reference} does not belong to {repo.full_name}."),
-    )
+    pr_number = parse_repo_pr_reference(reference=pr_reference, github_repo=repo)
     async with context.open_github_client(repo=repo) as github_client:
         pr, head_sha = await _load_exact_relink_pr(
             github_client=github_client,
