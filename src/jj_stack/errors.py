@@ -48,9 +48,7 @@ def resolve_exit_code(error: CliError) -> int:
 
     current: BaseException | None = error
     while current is not None:
-        if isinstance(current, CliError) and current.exit_code != EXIT_FAILURE:
-            return current.exit_code
-        if isinstance(current, SummarizedError) and current.exit_code != EXIT_FAILURE:
+        if isinstance(current, (CliError, SummarizedError)) and current.exit_code != EXIT_FAILURE:
             return current.exit_code
         current = current.__cause__
     return error.exit_code
