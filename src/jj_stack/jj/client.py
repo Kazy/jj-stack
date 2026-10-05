@@ -651,7 +651,7 @@ class JjClient:
         """Observe the fixed temporary import ref and its transient jj bookmark."""
 
         return PRTempArtifacts(
-            bookmark_targets=self._local_bookmark_targets(_PR_BRANCH_TEMP_BOOKMARK),
+            bookmark_targets=self._local_bookmark_targets(),
             ref_target=self.pr_branch_temp_ref_target(),
         )
 
@@ -1059,9 +1059,10 @@ class JjClient:
             return None
         return _parse_json_line(stdout, command="jj config list", model=_ConfigOrigin)
 
-    def _local_bookmark_targets(self, bookmark: str) -> tuple[CommitId, ...]:
-        """Return targets of the named local bookmark, excluding remote entries."""
+    def _local_bookmark_targets(self) -> tuple[CommitId, ...]:
+        """Return local targets of the transient checkout bookmark."""
 
+        bookmark = _PR_BRANCH_TEMP_BOOKMARK
         stdout = self._run_jj(("bookmark", "list", "-T", _BOOKMARK_TEMPLATE, bookmark))
         targets: list[CommitId] = []
         for row in _parse_bookmark_rows(stdout):
@@ -1077,7 +1078,7 @@ class JjClient:
         """Remove the fixed transient jj bookmark and backing Git import ref."""
 
         try:
-            if self._local_bookmark_targets(_PR_BRANCH_TEMP_BOOKMARK):
+            if self._local_bookmark_targets():
                 self._run_jj(("bookmark", "forget", _PR_BRANCH_TEMP_BOOKMARK))
                 self._run_jj(("git", "export"))
         finally:
