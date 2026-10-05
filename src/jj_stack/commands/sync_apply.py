@@ -16,6 +16,7 @@ from jj_stack.formatting import format_pr_label
 from jj_stack.github.client import GithubClient, GithubClientError
 from jj_stack.github.resolution import GithubTarget
 from jj_stack.identifiers import ChangeId, CommitId, short_change_id
+from jj_stack.jj.cli_args import JjCliArgs
 from jj_stack.jj.client import PRRefUpdate, quote_revset_symbol
 from jj_stack.models.github import GithubPR, GithubStack
 from jj_stack.models.stack import LocalCommit
@@ -341,9 +342,9 @@ def _verified_local_rebase(
             ),
             destination=base_commit_id,
         )
-        grouped = context.jj_client.query_commits_at_operation(
-            change_ids=tuple(item.change_id for item in local),
-            operation_id=operation_id,
+        grouped = context.jj_client.query_commits_by_change_ids(
+            tuple(item.change_id for item in local),
+            cli_args=JjCliArgs((f"--at-op={operation_id}",)),
         )
         desired = tuple(
             commits[0] for item in local if len(commits := grouped[item.change_id]) == 1

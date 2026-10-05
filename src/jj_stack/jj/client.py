@@ -271,6 +271,8 @@ class JjClient:
     def query_commits_by_change_ids(
         self,
         change_ids: Sequence[ChangeId],
+        *,
+        cli_args: JjCliArgs = _NO_CLI_ARGS,
     ) -> dict[ChangeId, tuple[LocalCommit, ...]]:
         """Return visible commits grouped by logical change ID."""
 
@@ -282,11 +284,9 @@ class JjClient:
             change_id: [] for change_id in ordered_change_ids
         }
         for chunk in batched(ordered_change_ids, QUERY_BATCH_SIZE, strict=False):
-            revset = change_ids_revset(chunk)
-            commits = self._query_commits(revset)
-            for commit in commits:
-                grouped.setdefault(commit.change_id, []).append(commit)
-        return {change_id: tuple(grouped.get(change_id, ())) for change_id in ordered_change_ids}
+            for commit in self._query_commits(change_ids_revset(chunk), cli_args=cli_args):
+                grouped[commit.change_id].append(commit)
+        return {change_id: tuple(commits) for change_id, commits in grouped.items()}
 
     def query_commits_by_ids(
         self,
@@ -921,37 +921,6 @@ class JjClient:
             )
         return match.group(1)
 
-    def query_commits_at_operation(
-        self,
-        *,
-        change_ids: Sequence[ChangeId],
-        operation_id: str,
-    ) -> dict[ChangeId, tuple[LocalCommit, ...]]:
-        """Return visible commits for logical changes in one unintegrated operation."""
-
-        ordered_change_ids = tuple(dict.fromkeys(change_ids))
-        if not ordered_change_ids:
-            return {}
-        stdout = self._run_jj(
-            (
-                f"--at-op={operation_id}",
-                "log",
-                "--no-graph",
-                "-r",
-                change_ids_revset(ordered_change_ids),
-                "-T",
-                _COMMIT_TEMPLATE,
-            ),
-        )
-        grouped: dict[ChangeId, list[LocalCommit]] = {
-            change_id: [] for change_id in ordered_change_ids
-        }
-        for line in stdout.splitlines():
-            if line.strip():
-                commit = _parse_commit_line(line)
-                grouped.setdefault(commit.change_id, []).append(commit)
-        return {change_id: tuple(grouped.get(change_id, ())) for change_id in ordered_change_ids}
-
     def integrate_operation(self, operation_id: str) -> None:
         """Integrate one previously prepared jj operation."""
 
@@ -979,8 +948,12 @@ class JjClient:
             ("abandon", *ordered_commit_ids), manage_working_copy=True, ignore_immutable=True
         )
 
-    def _query_commits(self, revset: str, *, limit: int | None = None) -> list[LocalCommit]:
-        lines = self._query_template_lines(revset, _COMMIT_TEMPLATE, limit=limit)
+    def _query_commits(
+        self, revset: str, *, limit: int | None = None, cli_args: JjCliArgs = _NO_CLI_ARGS
+    ) -> list[LocalCommit]:
+        lines = self._query_template_lines(
+            revset, _COMMIT_TEMPLATE, limit=limit, cli_args=cli_args
+        )
         return [_parse_commit_line(line) for line in lines]
 
     def _query_commits_with_membership(

@@ -34,12 +34,7 @@ _PUSH_REMOTE = f"jj-stack-push-{UUID(int=0).hex}"
 
 
 class _AmbiguousRevsetClient(JjClient):
-    def _query_commits(
-        self,
-        revset: str,
-        *,
-        limit: int | None = None,
-    ) -> list[LocalCommit]:
+    def _query_commits(self, revset: str, **_kwargs: object) -> list[LocalCommit]:
         return [
             make_change(commit_id="one", change_id="one-change", description="one\n"),
             make_change(commit_id="two", change_id="two-change", description="two\n"),
@@ -47,12 +42,7 @@ class _AmbiguousRevsetClient(JjClient):
 
 
 class _InvalidRevsetClient(JjClient):
-    def _query_commits(
-        self,
-        revset: str,
-        *,
-        limit: int | None = None,
-    ) -> list[LocalCommit]:
+    def _query_commits(self, revset: str, **_kwargs: object) -> list[LocalCommit]:
         raise JjCommandError(
             "jj log failed", stderr="Error: Failed to parse revset: unexpected token"
         )
