@@ -418,12 +418,8 @@ def adopt_jj_config(*, color: str | None, colors: Mapping[str, object]) -> None:
 def color_when(*, stdout_is_tty: bool) -> JjColorWhen:
     """Resolve the effective color choice into a `jj --color` value for embedded jj output."""
 
-    if _EFFECTIVE_COLOR == "always":
-        return "always"
-    if _EFFECTIVE_COLOR == "debug":
-        return "debug"
-    if _EFFECTIVE_COLOR == "never":
-        return "never"
+    if _EFFECTIVE_COLOR in ("always", "debug", "never"):
+        return _EFFECTIVE_COLOR
     return "always" if stdout_is_tty else "never"
 
 
