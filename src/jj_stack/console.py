@@ -596,7 +596,7 @@ def spinner(*, description: str, report_changes: bool = False) -> Generator[Spin
         if _JSONL:
             with _jsonl_status(description) as handle:
                 yield handle
-        elif not _stream_supports_live_progress(_STDERR_STREAM):
+        elif not _stderr_supports_live_progress():
             handle = _TextSpinner() if report_changes else _NullSpinner()
             handle.update(description)
             yield handle
@@ -616,7 +616,7 @@ def progress(*, description: str, total: int) -> Generator[ProgressLike]:
         with _jsonl_status(description, total=total) as handle:
             yield handle
         return
-    if not _stream_supports_live_progress(_STDERR_STREAM):
+    if not _stderr_supports_live_progress():
         yield _NullProgress()
         return
 
@@ -632,9 +632,9 @@ def progress(*, description: str, total: int) -> Generator[ProgressLike]:
         yield _RichProgressHandle(progress=progress_render, task_id=task_id)
 
 
-def _stream_supports_live_progress(stream: IO[str]) -> bool:
+def _stderr_supports_live_progress() -> bool:
     try:
-        return bool(stream.isatty())
+        return bool(_STDERR_STREAM.isatty())
     except OSError:
         return False
 
