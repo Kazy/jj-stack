@@ -1853,13 +1853,6 @@ def _validate_stack_members(
             )
 
 
-def _require_branch(repo: FakeGithubRepo, branch: str) -> str:
-    target = repo.ref_target(branch)
-    if target is not None:
-        return target
-    raise HTTPException(status_code=422, detail=f"Branch {branch!r} does not exist.")
-
-
 def _requested_names(payload: dict[str, object], key: str) -> list[str]:
     values = payload.get(key, [])
     return [str(value) for value in values] if isinstance(values, list) else []
