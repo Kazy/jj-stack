@@ -5,10 +5,13 @@ from __future__ import annotations
 import re
 from argparse import SUPPRESS, Action, ArgumentParser, ArgumentTypeError, _SubParsersAction
 from dataclasses import dataclass
+from typing import Literal
 
 _DIRECTORY_OPTION_DESTS = frozenset({"repo"})
 _FILE_OPTION_DESTS = frozenset({"edit"})
 _JJ_ALIAS_RE = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")
+
+Shell = Literal["bash", "zsh", "fish"]
 
 
 @dataclass(frozen=True)
@@ -62,7 +65,7 @@ class CompletionSpec:
 
 def emit_shell_completion(
     parser: ArgumentParser,
-    shell: str,
+    shell: Shell,
     *,
     jj_alias: str | None = None,
 ) -> str:
@@ -73,9 +76,7 @@ def emit_shell_completion(
         return _render_bash_completion(spec, jj_alias=jj_alias)
     if shell == "zsh":
         return _render_zsh_completion(spec, jj_alias=jj_alias)
-    if shell == "fish":
-        return _render_fish_completion(spec, jj_alias=jj_alias)
-    raise ValueError(f"Unsupported shell: {shell}")
+    return _render_fish_completion(spec, jj_alias=jj_alias)
 
 
 def validate_jj_alias(value: str) -> str:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from jj_stack.cli import build_parser, main
-from jj_stack.completion import _build_completion_spec, emit_shell_completion
+from jj_stack.completion import Shell, _build_completion_spec, emit_shell_completion
 
 
 def test_completion_suggests_canonical_commands_but_accepts_typed_aliases() -> None:
@@ -45,7 +45,7 @@ def test_completion_suggests_canonical_commands_but_accepts_typed_aliases() -> N
     ],
 )
 def test_alias_completion_routes_jj_and_keeps_standalone_completion(
-    shell: str,
+    shell: Shell,
     standalone_marker: str,
     alias_marker: str,
 ) -> None:
