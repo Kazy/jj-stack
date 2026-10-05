@@ -14,12 +14,7 @@ from jj_stack.identifiers import ChangeId
 from jj_stack.models.github import GithubBranchRef, GithubPR, GithubPRHead, PRState
 from jj_stack.models.github_details import GithubMergeQueueEntry
 from jj_stack.models.tracking import PRIdentity, SubmittedBaseline, TrackedPR
-from jj_stack.stack.change_state import (
-    UNOBSERVED,
-    ChangeObservation,
-    Unobserved,
-    classify,
-)
+from jj_stack.stack.change_state import ChangeObservation, classify
 from jj_stack.stack.status import (
     StackStatusChange,
     StatusResult,
@@ -56,36 +51,29 @@ def _status_change(
     change_id: str,
     commit_id: str = "commit-1",
     divergent: bool = False,
-    pr: GithubPR | None | Unobserved = UNOBSERVED,
+    pr: GithubPR,
     competitors: tuple[GithubPR, ...] = (),
-    pr_identity: PRIdentity | None = None,
+    pr_identity: PRIdentity,
     submitted_baseline: SubmittedBaseline | None = None,
-    subject: str = "feature",
 ) -> StackStatusChange:
     change = make_change(
         change_id=change_id,
         commit_id=commit_id,
-        description=f"{subject}\n",
+        description="feature\n",
     ).model_copy(update={"divergent": divergent})
-    tracked = (
-        TrackedPR(
-            pr_identity=pr_identity,
-            submitted_baseline=submitted_baseline or SubmittedBaseline(commit_id=commit_id),
-        )
-        if pr_identity is not None
-        else None
+    tracked = TrackedPR(
+        pr_identity=pr_identity,
+        submitted_baseline=submitted_baseline or SubmittedBaseline(commit_id=commit_id),
     )
-    open_prs = (pr,) if isinstance(pr, GithubPR) and pr.state == "open" else ()
+    open_prs = (pr,) if pr.state == "open" else ()
     observation = ChangeObservation(
         change_id=ChangeId(change_id),
         tracked=tracked,
-        branch=pr_identity.head_ref if pr_identity is not None else None,
+        branch=pr_identity.head_ref,
         local=(change,),
         selected=change,
         pr=pr,
-        open_prs_on_branch=(
-            UNOBSERVED if isinstance(pr, Unobserved) else (*open_prs, *competitors)
-        ),
+        open_prs_on_branch=(*open_prs, *competitors),
     )
     return StackStatusChange(change=change, state=classify(observation))
 
