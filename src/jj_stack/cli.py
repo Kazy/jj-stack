@@ -742,8 +742,7 @@ def _find_subcommand_parser(
 ) -> ArgumentParser | None:
     for action in parser._actions:
         if isinstance(action, _SubParsersAction):
-            parser_choice = action.choices.get(command_name)
-            return parser_choice if isinstance(parser_choice, ArgumentParser) else None
+            return action.choices.get(command_name)
     return None
 
 
@@ -776,10 +775,9 @@ def _cli_parse_error(message: str, *, prog: str | None = None) -> CliError:
     if invalid_choice is not None and invalid_choice.group("argument") == "command":
         return _unknown_command_error(invalid_choice.group("value"))
     unrecognized = message.lower().startswith("unrecognized argument")
-    if message and not message.endswith("."):
+    if not message.endswith("."):
         message = f"{message}."
-    if message:
-        message = f"{message[0].upper()}{message[1:]}"
+    message = f"{message[0].upper()}{message[1:]}"
     if unrecognized:
         command = prog.split()[-1] if prog and " " in prog else None
         listing = f"jj-stack help {command}" if command else "jj-stack help <command>"
