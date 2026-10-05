@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import jj_stack.console as console
 import jj_stack.ui as ui
-from jj_stack.concurrency import run_bounded_tasks
+from jj_stack.concurrency import DEFAULT_BOUNDED_CONCURRENCY, run_bounded_tasks
 from jj_stack.errors import CliError
 from jj_stack.github.client import GithubClient
 from jj_stack.github.overview_comments import (
@@ -21,7 +21,6 @@ from .models import GeneratedDescription
 async def sync_stack_overview_comments(
     *,
     comments_by_pr_number: dict[int, GithubIssueComment | None],
-    concurrency: int,
     overview_body: str | None,
     github_client: GithubClient,
     pr_numbers: tuple[int, ...],
@@ -40,7 +39,7 @@ async def sync_stack_overview_comments(
         )
         progress.advance()
         await run_bounded_tasks(
-            concurrency=concurrency,
+            concurrency=DEFAULT_BOUNDED_CONCURRENCY,
             items=pr_numbers[:-1],
             run_item=lambda pr_number: _sync_overview_comment(
                 comment_body=None,

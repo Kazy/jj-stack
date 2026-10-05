@@ -8,7 +8,6 @@ from dataclasses import replace
 import jj_stack.console as console
 import jj_stack.ui as ui
 from jj_stack.bootstrap import CommandContext
-from jj_stack.concurrency import DEFAULT_BOUNDED_CONCURRENCY
 from jj_stack.errors import CliError, error_message
 from jj_stack.formatting import format_pr_label
 from jj_stack.github.client import GithubClient, GithubClientError
@@ -246,14 +245,12 @@ async def publish_prepared(
         )
         await sync_stack_overview_comments(
             comments_by_pr_number=overview_comments,
-            concurrency=DEFAULT_BOUNDED_CONCURRENCY,
             overview_body=overview_body,
             github_client=github_client,
             pr_numbers=pr_numbers,
         )
         await sync_revision_history_comments(
             comments_by_pr_number=comments_by_marker[REVISION_HISTORY_COMMENT_MARKER],
-            concurrency=DEFAULT_BOUNDED_CONCURRENCY,
             github_client=github_client,
             pr_numbers=pr_numbers,
             revisions_by_pr=revisions_by_pr,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import jj_stack.console as console
-from jj_stack.concurrency import run_bounded_tasks
+from jj_stack.concurrency import DEFAULT_BOUNDED_CONCURRENCY, run_bounded_tasks
 from jj_stack.github.client import GithubClient
 from jj_stack.identifiers import CommitId, short_commit_id
 from jj_stack.models.github import GithubIssueComment, GithubPRRevision
@@ -19,7 +19,6 @@ type SubmittedForcePush = tuple[CommitId, CommitId]
 async def sync_revision_history_comments(
     *,
     comments_by_pr_number: dict[int, GithubIssueComment | None],
-    concurrency: int,
     revisions_by_pr: dict[int, tuple[GithubPRRevision, ...]],
     github_client: GithubClient,
     pr_numbers: tuple[int, ...],
@@ -32,7 +31,7 @@ async def sync_revision_history_comments(
         total=len(pr_numbers),
     ) as progress:
         await run_bounded_tasks(
-            concurrency=concurrency,
+            concurrency=DEFAULT_BOUNDED_CONCURRENCY,
             items=pr_numbers,
             run_item=lambda pr_number: _sync_revision_history_comment(
                 existing_comment=comments_by_pr_number.get(pr_number),
