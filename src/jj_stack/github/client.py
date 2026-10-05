@@ -297,10 +297,13 @@ class _GraphqlGitObject(BaseModel):
     oid: CommitId
 
 
-class _GraphqlRef(BaseModel):
+class _GraphqlRefTarget(BaseModel):
+    target: _GraphqlGitObject
+
+
+class _GraphqlRef(_GraphqlRefTarget):
     name: str
     prefix: str
-    target: _GraphqlGitObject
 
 
 class _GraphqlIssueCommentConnection(BaseModel):
@@ -404,23 +407,12 @@ class GithubClient:
             if read_template:
                 template = _default_pr_template(repo)
             for index, branch in enumerate(chunk):
-                raw_ref = repo.get(f"branch_{index}")
-                if raw_ref is None:
-                    continue
-                observed_branch, target = _branch_target(
-                    _validate_model(
+                if (raw_ref := repo.get(f"branch_{index}")) is not None:
+                    targets[branch] = _validate_model(
                         raw_ref,
-                        model=_GraphqlRef,
-                        error_context=(
-                            "GitHub branch target lookup response had invalid ref data"
-                        ),
-                    )
-                )
-                if observed_branch != branch:
-                    raise GithubClientError(
-                        "GitHub branch target lookup returned a different branch."
-                    )
-                targets[branch] = target
+                        model=_GraphqlRefTarget,
+                        error_context="GitHub branch target lookup response had invalid ref data",
+                    ).target.oid
 
         if ordered:
             await _query_chunks(ordered, query_chunk)
@@ -1403,8 +1395,6 @@ def _branch_targets_query(
             _graphql_document(
                 f"""
                 branch_{index}: ref(qualifiedName: ${name}) {{
-                  name
-                  prefix
                   target {{
                     oid
                   }}
