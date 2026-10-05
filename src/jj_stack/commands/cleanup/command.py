@@ -96,25 +96,6 @@ class PRCleanup:
 type CleanupPreflight = PRCleanup | CleanupAction | None
 
 
-def _build_action_streamer(*, header: str) -> Callable[[CleanupAction], None]:
-    """Print the action header once, then stream actions as they arrive."""
-
-    header_printed = False
-
-    def emit_action(action: CleanupAction) -> None:
-        nonlocal header_printed
-        if not header_printed:
-            console.output(header)
-            header_printed = True
-        console.action_row(
-            kind=None if action.kind == "tracking" else action.kind,
-            status=action.status,
-            body=action.body,
-        )
-
-    return emit_action
-
-
 def cleanup(
     *,
     cli_args: JjCliArgs,
@@ -179,14 +160,7 @@ def _run_cleanup_command(
         ):
             console.warning(plain_text(message))
 
-    actions = asyncio.run(
-        _run_cleanup_async(
-            on_action=_build_action_streamer(
-                header=("Cleanup preview:" if prepared_cleanup.dry_run else "Cleanup:"),
-            ),
-            prepared_cleanup=prepared_cleanup,
-        )
-    )
+    actions = asyncio.run(_run_cleanup_async(prepared_cleanup=prepared_cleanup))
     if not actions:
         console.output("No cleanup actions needed.")
     return 1 if any(action.status == "blocked" for action in actions) else 0
@@ -228,9 +202,6 @@ async def cleanup_tracked_prs(
     try:
         actions = await _run_cleanup_async(
             github_client=github_client,
-            on_action=_build_action_streamer(
-                header="Cleanup preview:" if dry_run else "Cleanup:",
-            ),
             prepared_cleanup=prepared_cleanup,
             preview_detached_dependents=(planned_detached_dependents if dry_run else frozenset()),
             preview_local_removals=(planned_local_removals if dry_run else frozenset()),
@@ -384,7 +355,6 @@ def _resolve_cleanup_change_ids(
 async def _run_cleanup_async(
     *,
     github_client: GithubClient | None = None,
-    on_action: Callable[[CleanupAction], None],
     prepared_cleanup: PreparedCleanup,
     preview_detached_dependents: frozenset[int] = frozenset(),
     preview_local_removals: frozenset[ChangeId] = frozenset(),
@@ -392,8 +362,14 @@ async def _run_cleanup_async(
     actions: list[CleanupAction] = []
 
     def record_action(action: CleanupAction) -> None:
+        if not actions:
+            console.output("Cleanup preview:" if prepared_cleanup.dry_run else "Cleanup:")
         actions.append(action)
-        on_action(action)
+        console.action_row(
+            kind=None if action.kind == "tracking" else action.kind,
+            status=action.status,
+            body=action.body,
+        )
 
     candidates = prepared_cleanup.candidates
     github_target = prepared_cleanup.github_target
