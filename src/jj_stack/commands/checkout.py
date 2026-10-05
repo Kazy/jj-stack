@@ -534,14 +534,11 @@ def _picker_choices(
         if not active_numbers:
             continue
         numbers = stack.pr_numbers
-        members = tuple(prs.get(number) for number in numbers)
-        if any(member is None for member in members):
-            missing = next(
-                number for number, member in zip(numbers, members, strict=True) if member is None
-            )
+        missing = next((number for number in numbers if prs.get(number) is None), None)
+        if missing is not None:
             pr_label = format_pr_label(missing, repo=repo)
             raise CliError(t"GitHub stack #{stack.number} refers to missing {pr_label}.")
-        resolved = tuple(member for member in members if member is not None)
+        resolved = tuple(pr for number in numbers if (pr := prs.get(number)) is not None)
         if any(managed_pr_head_problem(member, repo) is not None for member in resolved):
             continue
         bottom = resolved[0]
