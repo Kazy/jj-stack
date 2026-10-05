@@ -23,7 +23,7 @@ In terminals with hyperlink support, click a PR label to open it on GitHub. The 
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -420,7 +420,7 @@ def _render_prepared_status(
 def render_status_summary_lines(
     *,
     leading_separator: bool,
-    result,
+    result: StatusResult,
     verbose: bool,
     prerendered_blocks: dict[CommitId, tuple[str, ...]],
 ) -> tuple[ui.Renderable, ...]:
@@ -442,8 +442,7 @@ def render_status_summary_lines(
             prerendered_blocks=prerendered_blocks,
         ),
     )
-    if unsubmitted_lines:
-        lines.extend(unsubmitted_lines)
+    lines.extend(unsubmitted_lines)
 
     submitted_lines = _render_summary_section(
         _render_submitted_section_title(submitted_changes),
@@ -494,8 +493,8 @@ def _render_summary_section(
     title: ui.Message,
     *,
     include_leading_separator: bool,
-    changes: tuple,
-    renderer,
+    changes: tuple[StackStatusChange, ...],
+    renderer: Callable[[StackStatusChange], tuple[ui.Renderable, ...]],
     verbose: bool,
 ) -> tuple[ui.Renderable, ...]:
     """Render one capped summary section."""
@@ -526,7 +525,7 @@ def _render_summary_section(
     return tuple(lines)
 
 
-def _render_submitted_section_title(changes: tuple) -> ui.Message:
+def _render_submitted_section_title(changes: tuple[StackStatusChange, ...]) -> ui.Message:
     """Render the submitted-section heading, linking the newest submitted PR when possible."""
 
     top_pr = changes[0].pr if changes else None
@@ -796,7 +795,10 @@ def _review_details(report: ChangeReport) -> tuple[ui.Message, ...]:
 
 
 def _emit_lines(
-    lines: tuple[ui.Renderable, ...], *, emitter=console.output, soft_wrap: bool = True
+    lines: tuple[ui.Renderable, ...],
+    *,
+    emitter: Callable[..., None] = console.output,
+    soft_wrap: bool = True,
 ) -> None:
     for line in lines:
         emitter(line, soft_wrap=soft_wrap)
