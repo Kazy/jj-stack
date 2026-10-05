@@ -10,7 +10,7 @@ from jj_stack.formatting import format_pr_number
 from jj_stack.github.resolution import GithubRepoAddress
 from jj_stack.identifiers import ChangeId, CommitId, short_change_id
 from jj_stack.models.stack import LocalCommit
-from jj_stack.models.tracking import PRIdentity, TrackingState
+from jj_stack.models.tracking import PRIdentity
 from jj_stack.stack.change_state import (
     BranchDisagrees,
     BranchMissing,
@@ -100,10 +100,9 @@ def build_merge_plan(
     observation: RepoFacts,
     repo: GithubRepoAddress,
     changes: tuple[LocalCommit, ...],
-    state: TrackingState,
     target_change_id: ChangeId | None,
 ) -> MergePlan:
-    merge_changes = tuple(_merge_change(observation, change, state) for change in changes)
+    merge_changes = tuple(_merge_change(observation, change) for change in changes)
     candidates: list[MergeChange] = []
     boundary: Message | None = None
     for local, change in zip(changes, merge_changes, strict=True):
@@ -225,20 +224,15 @@ def _inspect(reason: Message) -> Message:
     return t"{reason}; inspect it and rerun {ui.cmd('jj-stack merge')}"
 
 
-def _merge_change(
-    observation: RepoFacts,
-    change: LocalCommit,
-    state: TrackingState,
-) -> MergeChange | None:
-    candidate = state.prs.get(change.change_id)
+def _merge_change(observation: RepoFacts, change: LocalCommit) -> MergeChange | None:
     observed = observation.prs.get(change.change_id)
-    if candidate is None or observed is None or (pr := observed.pr) is None:
+    if observed is None or (pr := observed.pr) is None:
         return None
     return MergeChange(
         base_ref=pr.base.ref,
         change_id=change.change_id,
         commit_id=change.commit_id,
-        identity=candidate.pr_identity,
+        identity=observed.tracked.pr_identity,
         pr_node_id=pr.node_id,
     )
 

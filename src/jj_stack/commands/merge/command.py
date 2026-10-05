@@ -338,7 +338,6 @@ async def _request_merge_async(
         observation=prs_task.result(),
         repo=github_repo,
         changes=stack.changes,
-        state=prepared_merge.state,
         target_change_id=prepared_merge.target_change_id,
     )
     stacks = stacks_task.result()
