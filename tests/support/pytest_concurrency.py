@@ -79,8 +79,6 @@ def analyze_intervals(
     *,
     requested_slots: int,
 ) -> ConcurrencySummary:
-    if requested_slots < 1:
-        raise ValueError("requested_slots must be at least 1")
     if not intervals:
         return ConcurrencySummary(
             requested_slots=requested_slots,
