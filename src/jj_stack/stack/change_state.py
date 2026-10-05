@@ -66,9 +66,6 @@ class ChangeObservation:
     open_prs_on_branch: tuple[GithubPR, ...] | Unobserved | ObservationFailed = UNOBSERVED
     # The commit at branch@remote; None when the branch is absent.
     remote_target: CommitId | None | Unobserved = UNOBSERVED
-    # Whether PR and ancestry checks found the submitted work on trunk.
-    trunk_evidence: TrunkEvidenceKind | None | Unobserved = UNOBSERVED
-    trunk_evidence_reason: Message | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -504,11 +501,6 @@ def classify(
     o = observation
     if selected is not None:
         o = replace(o, selected=selected)
-    if ancestries is not None and o.tracked is not None and isinstance(o.pr, GithubPR):
-        evidence, reason = classify_trunk_evidence(
-            ancestries=ancestries, candidate=o.tracked, pr=o.pr
-        )
-        o = replace(o, trunk_evidence=evidence, trunk_evidence_reason=reason)
     common = _Common(
         change_id=o.change_id,
         branch=o.branch,
@@ -529,7 +521,13 @@ def classify(
         if len(open_prs) > 1:
             return PRAmbiguous(**common, tracked=o.tracked, open_prs_on_branch=open_prs)
         return PRMissing(**common, tracked=o.tracked, open_prs_on_branch=open_prs)
-    return _classify_pr(o, common, open_prs, o.pr, o.tracked)
+    evidence: TrunkEvidenceKind | None = None
+    reason: Message | None = None
+    if ancestries is not None:
+        evidence, reason = classify_trunk_evidence(
+            ancestries=ancestries, candidate=o.tracked, pr=o.pr
+        )
+    return _classify_pr(o, common, open_prs, o.pr, o.tracked, evidence, reason)
 
 
 def _classify_pr(
@@ -538,21 +536,22 @@ def _classify_pr(
     open_prs: tuple[GithubPR, ...],
     pr: GithubPR,
     tracked: TrackedPR,
+    evidence: TrunkEvidenceKind | None,
+    reason: Message | None,
 ) -> LinkedPRState:
     if pr.head.ref != tracked.pr_identity.head_ref:
         return PRIdentityMismatch(**common, tracked=tracked, pr=pr, remote_target=o.remote_target)
-    evidence = o.trunk_evidence
     with_pr = _WithPRCommon(
         **common,
         tracked=tracked,
         pr=pr,
         remote_target=o.remote_target,
-        trunk_evidence_reason=o.trunk_evidence_reason if evidence is None else None,
+        trunk_evidence_reason=reason if evidence is None else None,
     )
     competitors = tuple(candidate for candidate in open_prs if candidate.number != pr.number)
     if competitors:
         return CompetingOpenPR(**with_pr, competitors=competitors)
-    if isinstance(evidence, str):
+    if evidence is not None:
         return Landed(**with_pr, evidence=evidence)
     if pr.state == "merged":
         return Merged(**with_pr)

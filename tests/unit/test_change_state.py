@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 import jj_stack.ui as ui
+from jj_stack.identifiers import CommitId
 from jj_stack.models.github import GithubBranchRef, GithubPR, GithubPRHead, PRState
 from jj_stack.models.github_details import GithubMergeQueueEntry
 from jj_stack.models.stack import LocalCommit
@@ -105,7 +106,6 @@ _CLASSIFICATION_CASES: tuple[tuple[str, dict[str, object], type], ...] = (
         {"pr": None, "open_prs_on_branch": (_pr(number=8), _pr(number=9))},
         PRAmbiguous,
     ),
-    ("merged and on trunk", {"pr": _pr(state="merged"), "trunk_evidence": "rewritten"}, Landed),
     ("queued", {"pr": _pr(queued=True)}, Queued),
     ("queued but head moved", {"pr": _pr(queued=True, head_sha="elsewhere")}, PRHeadMoved),
     (
@@ -139,19 +139,20 @@ def test_unobserved_facts_never_produce_a_stop() -> None:
             selected=None,
             open_prs_on_branch=UNOBSERVED,
             remote_target=UNOBSERVED,
-            trunk_evidence=UNOBSERVED,
         )
     )
 
     assert isinstance(state, Published)
 
 
-def test_merged_state_carries_the_reason_trunk_did_not_prove_it() -> None:
-    state = classify(
-        _observe(pr=_pr(state="merged"), trunk_evidence=None, trunk_evidence_reason="why")
-    )
+def test_trunk_ancestry_separates_landed_from_merged() -> None:
+    observed = _observe(pr=_pr(state="merged"))
 
-    assert isinstance(state, Merged) and state.trunk_evidence_reason == "why"
+    landed = classify(observed, ancestries={CommitId("baseline"): "on_trunk"})
+    merged = classify(observed, ancestries={CommitId("baseline"): "not_on_trunk"})
+
+    assert isinstance(landed, Landed)
+    assert isinstance(merged, Merged) and merged.trunk_evidence_reason is not None
 
 
 def test_a_pr_head_visible_locally_is_pushed_work_not_a_moved_head() -> None:
