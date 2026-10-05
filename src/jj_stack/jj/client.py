@@ -429,11 +429,8 @@ class JjClient:
 
         if not changes:
             return {}
-        if len(changes) == 1:
-            change = changes[0]
-            return {change.commit_id: self.render_commit_log_lines(change, color_when=color_when)}
         with ThreadPoolExecutor(max_workers=min(len(changes), 10)) as pool:
-            rendered = list(
+            return dict(
                 pool.map(
                     lambda change: (
                         change.commit_id,
@@ -442,7 +439,6 @@ class JjClient:
                     changes,
                 )
             )
-        return dict(rendered)
 
     def render_short_change_ids(
         self,

@@ -78,8 +78,6 @@ def render_commit_blocks(
 ) -> dict[CommitId, tuple[str, ...]]:
     """Render several changes using the active CLI/UI color policy."""
 
-    if not changes:
-        return {}
     return client.render_commit_log_blocks(
         changes, color_when=color_when(stdout_is_tty=sys.stdout.isatty())
     )
