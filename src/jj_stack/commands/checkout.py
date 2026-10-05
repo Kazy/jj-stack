@@ -243,7 +243,6 @@ async def _checkout_pr_stack(
         context=context,
         prs=prs,
         remote_targets=remote_targets,
-        repo=repo,
         stack=stack,
         state=state,
     )
@@ -378,11 +377,9 @@ def _save_checkout_tracking(
     context: CommandContext,
     prs: tuple[GithubPR, ...],
     remote_targets: dict[str, CommitId],
-    repo: GithubRepoAddress,
     stack: LocalStack,
     state: TrackingState,
 ) -> int:
-    pr_heads = tuple(require_managed_pr_head(pr=pr, repo=repo) for pr in prs)
     changes = stack.changes[: len(prs)]
     if len(changes) < len(prs):
         raise CliError(
@@ -395,21 +392,21 @@ def _save_checkout_tracking(
     # change are additions to its branch. Each lower PR's head must be exactly its change's
     # commit, and every branch must name the change it is paired with.
     replacements: dict[ChangeId, TrackedPR] = {}
-    for pr, head_sha, change in zip(prs, pr_heads, changes, strict=True):
+    for pr, change in zip(prs, changes, strict=True):
         if not pr_branch_matches_change(pr.head.ref, change.change_id):
             raise CliError(
                 t"PR branch {ui.bookmark(pr.head.ref)} does not match change "
                 t"{ui.change_id(change.change_id)}."
             )
         pr_label = format_pr_label(pr.number, url=pr.html_url)
-        if pr is not prs[-1] and head_sha != change.commit_id:
+        if pr is not prs[-1] and pr.head.sha != change.commit_id:
             raise CliError(
                 t"{pr_label} is at a commit that "
                 t"{format_pr_label(prs[-1].number, url=prs[-1].html_url)} does not build on.",
                 hint=t"Check out that pull request first with "
                 t"{ui.cmd(f'jj-stack checkout --pull-request {pr.number}')}.",
             )
-        if remote_targets.get(pr.head.ref) != head_sha:
+        if remote_targets.get(pr.head.ref) != pr.head.sha:
             raise CliError(
                 t"{pr_label} and branch "
                 t"{ui.bookmark(pr.head.ref)} no longer identify the same commit.",
@@ -420,7 +417,7 @@ def _save_checkout_tracking(
                 pr_number=pr.number,
                 head_ref=pr.head.ref,
             ),
-            submitted_baseline=SubmittedBaseline(commit_id=head_sha),
+            submitted_baseline=SubmittedBaseline(commit_id=pr.head.sha),
         )
     require_unique_pr_claims(
         saved={change_id: tracked.pr_identity for change_id, tracked in state.prs.items()},
