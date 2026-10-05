@@ -438,7 +438,6 @@ def render_status_summary_lines(
         renderer=lambda change: _render_summary_change_lines(
             change=change,
             repo=result.github_repo,
-            show_status=False,
             prerendered_blocks=prerendered_blocks,
         ),
     )
@@ -452,7 +451,6 @@ def render_status_summary_lines(
         renderer=lambda change: _render_summary_change_lines(
             change=change,
             repo=result.github_repo,
-            show_status=True,
             prerendered_blocks=prerendered_blocks,
         ),
     )
@@ -721,13 +719,12 @@ def _render_summary_change_lines(
     *,
     change: StackStatusChange,
     repo: GithubRepoAddress | None,
-    show_status: bool,
     prerendered_blocks: dict[CommitId, tuple[str, ...]],
 ) -> tuple[ui.Renderable, ...]:
     """Render one change inside a submitted or unsubmitted summary section."""
 
     summary = _format_status_summary(change, repo=repo)
-    if not show_status and summary == "not submitted":
+    if summary == "not submitted":
         summary = None
     return render_commit_lines(
         prerendered_blocks[change.commit_id],
