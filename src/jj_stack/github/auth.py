@@ -31,7 +31,4 @@ def _github_token_from_gh_cli() -> str | None:
         return None
     if completed.returncode != 0:
         return None
-    token = completed.stdout.strip()
-    if not token:
-        return None
-    return token
+    return completed.stdout.strip() or None
