@@ -117,7 +117,6 @@ def _copy_fake_github_repo_from_template(
     git_dir = tmp_path / "remotes" / _TEMPLATE_OWNER / f"{_TEMPLATE_NAME}.git"
     run_command(["jj", "git", "remote", "set-url", "origin", str(git_dir)], repo)
     fake_repo = FakeGithubRepo(
-        default_branch="main",
         git_dir=git_dir,
         name=_TEMPLATE_NAME,
         owner=_TEMPLATE_OWNER,

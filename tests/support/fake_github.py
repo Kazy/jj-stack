@@ -240,10 +240,10 @@ class FakeGithubIssueComment:
 class FakeGithubRepo:
     """Repo metadata plus its backing bare Git repo."""
 
-    default_branch: str | None
     git_dir: Path
     name: str
     owner: str
+    default_branch: str = "main"
     # The default repo allows only squash merges. Tests that need other repo policies flip these
     # settings directly.
     allow_merge_commit: bool = False
@@ -369,7 +369,7 @@ class FakeGithubRepo:
             return
         entry = self.merge_queue[0]
         pr = self.prs[entry.pr_number]
-        trunk = self.default_branch or "main"
+        trunk = self.default_branch
         if entry.phase == "queued":
             heads = self.branch_heads()
             entry.group_commit = self._replay_commit(
@@ -1512,7 +1512,6 @@ def initialize_bare_repo(
     )
 
     return FakeGithubRepo(
-        default_branch="main",
         git_dir=git_dir,
         name=name,
         owner=owner,
