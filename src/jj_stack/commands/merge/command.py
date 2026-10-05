@@ -143,6 +143,7 @@ async def _run_merge(
                     dry_run=dry_run,
                     merge_method=merge_method,
                     revset=selected_revset,
+                    target=target,
                     target_change_id=target_change_id,
                 )
             outcome, github_repo_state = await _request_merge_async(prepared_merge, github_client)
@@ -262,6 +263,7 @@ def _prepare_merge(
     dry_run: bool,
     merge_method: MergeMethod | None,
     revset: str | None,
+    target: GithubTarget,
     target_change_id: ChangeId | None,
 ) -> PreparedMerge:
     prepared = prepare_local_stack(
@@ -270,7 +272,6 @@ def _prepare_merge(
         fetch_remote_state=True,
         revset=revset,
     )
-    target = require_github_target(prepared.github_target)
     return PreparedMerge(
         context=context,
         dry_run=dry_run,
