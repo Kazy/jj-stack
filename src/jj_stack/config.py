@@ -173,8 +173,6 @@ def _raise_on_likely_unknown_keys(
 
 
 def _format_validation_issue(location: tuple[str, ...], message: str) -> str:
-    if len(location) == 1:
-        return f"[{CONFIG_SECTION}].{location[0]}: {message}"
     if location[:1] == ("logging",) and len(location) == 2:
         return f"[{CONFIG_SECTION}.logging].{location[1]}: {message}"
     return f"[{CONFIG_SECTION}].{'.'.join(location)}: {message}"
