@@ -178,19 +178,10 @@ def _select_commit(observation: SelectedPathObservation) -> LocalCommit:
     candidates = tuple(sorted(observation.selector_commits, key=lambda commit: commit.commit_id))
     current = observation.current_working_copy
     if current is not None:
-        if not current.has_described_work:
-            if len(current.parents) != 1:
-                raise ValueError("Default selection has no ordinary parent.")
-            parent_commit_id = current.parents[0]
-            try:
-                return next(
-                    commit for commit in candidates if commit.commit_id == parent_commit_id
-                )
-            except StopIteration as error:
-                raise ValueError(
-                    "Default parent is absent from the selected observation."
-                ) from error
-        return current
+        if current.has_described_work:
+            return current
+        # Fall back to @-, which a merge working copy makes ambiguous.
+        candidates = tuple(commit for commit in candidates if commit.commit_id in current.parents)
 
     if observation.select_mutable_copy:
         off_trunk = tuple(
@@ -222,5 +213,9 @@ def _select_commit(observation: SelectedPathObservation) -> LocalCommit:
         )
 
     if len(candidates) != 1:
-        raise AmbiguousSelectionError("The selector resolved to more than one commit.")
+        raise AmbiguousSelectionError(
+            "The selector resolved to more than one commit.",
+            hint=t"Run {ui.cmd('jj-stack list')} to find the stack you want, then select its "
+            t"head change ID.",
+        )
     return candidates[0]

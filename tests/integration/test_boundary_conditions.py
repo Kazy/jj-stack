@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from jj_stack.errors import EXIT_NO_STACK
+from jj_stack.errors import EXIT_AMBIGUOUS, EXIT_NO_STACK
 
 from ..support.integration_helpers import (
     commit_file,
@@ -72,6 +72,15 @@ def test_stack_commands_reject_merge_commits_without_traceback(
 
     assert exit_code == EXIT_NO_STACK
     assert "change with multiple parents" in combined
+    _assert_no_traceback(captured)
+
+    # An empty merge @ makes view's default @- name two commits.
+    run_command(["jj", "new", "@--"], repo)
+    exit_code = run_main(repo, config_path, "view")
+    captured = capsys.readouterr()
+
+    assert exit_code == EXIT_AMBIGUOUS
+    assert "resolved to more than one commit" in captured.err
     _assert_no_traceback(captured)
 
 
