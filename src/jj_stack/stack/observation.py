@@ -19,10 +19,9 @@ TRUNK_PATH = "first_ancestors(trunk())"
 
 @dataclass(frozen=True, slots=True)
 class StackObservation:
-    """Interpreted commit rows and the explicit jj config used to observe them."""
+    """Interpreted commit rows with their membership flags."""
 
     rows: tuple[tuple[LocalCommit, tuple[bool, ...]], ...]
-    cli_args: JjCliArgs
 
     def copies(
         self, change_ids: Sequence[ChangeId], *, off_trunk: bool = False
@@ -61,8 +60,7 @@ def observe_stack_commits(
             (commit, flags[1:])
             for commit, flags in _project_copies(tuple(rows_by_commit.values()), expected)
             if flags[0]
-        ),
-        cli_args=cli_args,
+        )
     )
 
 
@@ -81,7 +79,7 @@ def observe_change_copies(
             cli_args=cli_args,
         )
     )
-    return StackObservation(rows=_project_copies(rows, expected), cli_args=cli_args)
+    return StackObservation(rows=_project_copies(rows, expected))
 
 
 def _project_copies(
