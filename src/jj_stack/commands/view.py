@@ -160,10 +160,10 @@ def _run_status(
             if multi_selector and selector is not None:
                 console.output(_status_heading(selector))
         if isinstance(prepared_status, CliError):
-            console.warning(ui.prefixed_line("Error: ", error_message(prepared_status)))
+            console.warning(ui.PrefixedLine("Error: ", error_message(prepared_status)))
             hint = prepared_status.hint
             if hint is not None:
-                console.warning(ui.prefixed_line("Hint: ", hint))
+                console.warning(ui.PrefixedLine("Hint: ", hint))
             exit_code = EXIT_INCOMPLETE
             continue
 

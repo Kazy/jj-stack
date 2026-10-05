@@ -61,9 +61,7 @@ def print_submitted_changes(
     if changes:
         _, top_pr = changes[-1]
         console.output(
-            ui.prefixed_line(
-                "Top of stack: ", format_pr_label(top_pr.number, url=top_pr.html_url)
-            )
+            ui.PrefixedLine("Top of stack: ", format_pr_label(top_pr.number, url=top_pr.html_url))
         )
 
 
@@ -96,7 +94,7 @@ def print_selected_line(selected_change_id: str, selected_subject: str) -> None:
     """Print the selected stack head line."""
 
     console.output(
-        ui.prefixed_line(
+        ui.PrefixedLine(
             "Selected: ",
             t"{selected_subject} ({ui.change_id(selected_change_id)})",
         )

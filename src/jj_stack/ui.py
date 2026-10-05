@@ -163,29 +163,6 @@ def join[T](
     return tuple(parts)
 
 
-def prefixed_line(
-    prefix: Message,
-    body: Message | StatusBadge,
-    *,
-    message_labels: tuple[str, ...] = (),
-    prefix_labels: tuple[str, ...] = (),
-) -> PrefixedLine:
-    """Build a hanging-indent line without choosing a concrete renderer."""
-
-    return PrefixedLine(
-        prefix=prefix,
-        body=body,
-        message_labels=message_labels,
-        prefix_labels=prefix_labels,
-    )
-
-
-def suffixed_line(body: str, suffix: Message) -> SuffixedLine:
-    """Append semantic content to a line rendered by `jj log`."""
-
-    return SuffixedLine(body=body, suffix=suffix)
-
-
 def plain_text(content: Message) -> str:
     """Render semantic template content into plain text."""
 

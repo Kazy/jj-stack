@@ -100,7 +100,7 @@ def checkout(
     context = bootstrap_context(repo=repo, cli_args=cli_args, debug=debug)
     result = asyncio.run(_checkout_async(context=context, pick=pick, pr=pr, revset=revset))
     if result.fetched_tip_commit is not None:
-        console.output(ui.prefixed_line("Fetched PR head commit: ", result.fetched_tip_commit))
+        console.output(ui.PrefixedLine("Fetched PR head commit: ", result.fetched_tip_commit))
     if result.adopted_count:
         noun = "PR" if result.adopted_count == 1 else "PRs"
         console.output(f"Saved pull request links for {result.adopted_count} {noun}.")

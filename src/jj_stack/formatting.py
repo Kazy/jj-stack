@@ -68,7 +68,7 @@ def render_commit_lines(
 
     if suffix is None:
         return raw_lines
-    return (ui.suffixed_line(raw_lines[0], suffix), *raw_lines[1:])
+    return (ui.SuffixedLine(raw_lines[0], suffix), *raw_lines[1:])
 
 
 def render_commit_blocks(

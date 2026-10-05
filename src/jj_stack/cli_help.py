@@ -93,7 +93,7 @@ def emit_top_level_help(
     include_hidden: bool,
 ) -> None:
     console.output(
-        ui.prefixed_line(
+        ui.PrefixedLine(
             _help_heading("Usage: "),
             _top_level_usage_message(include_hidden=include_hidden),
         )
@@ -134,7 +134,7 @@ def emit_top_level_help(
 
 def emit_command_help(parser: ArgumentParser) -> None:
     console.output(
-        ui.prefixed_line(
+        ui.PrefixedLine(
             _help_heading("Usage: "),
             _command_usage_message(parser),
         )
@@ -660,6 +660,6 @@ def _emit_help_paragraphs(text: str) -> None:
         if index:
             console.output()
         if paragraph.startswith("- "):
-            console.output(ui.prefixed_line("- ", _help_rich_text(paragraph[2:])))
+            console.output(ui.PrefixedLine("- ", _help_rich_text(paragraph[2:])))
         else:
             console.output(_help_rich_text(paragraph))

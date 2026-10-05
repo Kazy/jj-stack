@@ -81,7 +81,7 @@ def test_output_neutralizes_terminal_escapes_from_change_descriptions() -> None:
 
     styled = render(coloured, color="always")
     assert "coloured" in styled and "\x1b[" in styled
-    suffixed = ui_module.suffixed_line(coloured, "not submitted")
+    suffixed = ui_module.SuffixedLine(coloured, "not submitted")
     suffixed_output = render(suffixed, color="always")
     assert "coloured" in suffixed_output
     assert "not submitted" in suffixed_output

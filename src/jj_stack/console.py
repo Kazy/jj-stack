@@ -563,7 +563,7 @@ def action_row(*, kind: str | None, status: ActionStatus, body: ui.Message) -> N
         prefix, prefix_style, body_style = "  -", ("hint heading",), ()
     message: ui.Message = body if kind is None else (ui.semantic_text(kind, "prefix"), ": ", body)
     output(
-        ui.prefixed_line(
+        ui.PrefixedLine(
             f"{prefix} ", message, prefix_labels=prefix_style, message_labels=body_style
         )
     )
