@@ -163,12 +163,7 @@ def _removal_reason(pr: GithubPR) -> str | None:
 def _matching_pr(
     pr: GithubPR | None, change: MergeChange, execution: MergeExecutionInputs
 ) -> GithubPR:
-    if (
-        pr is None
-        or pr.number != change.identity.pr_number
-        or pr.head.ref != change.identity.head_ref
-        or pr.head.sha != change.commit_id
-    ):
+    if pr is None or pr.head.ref != change.identity.head_ref or pr.head.sha != change.commit_id:
         label = format_pr_number(change.identity.pr_number, repo=execution.repo)
         raise CliError(
             t"PR {label} changed or became unavailable while waiting.",
