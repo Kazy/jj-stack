@@ -898,15 +898,12 @@ class JjClient:
     ) -> str:
         """Compute a rebase in an unintegrated operation and return its operation ID."""
 
-        ordered_change_ids = tuple(dict.fromkeys(change_ids))
-        if not ordered_change_ids:
-            raise ValueError("speculative rebase requires at least one change")
         output = self._run_jj(
             (
                 "--no-integrate-operation",
                 "rebase",
                 "-r",
-                change_ids_revset(ordered_change_ids),
+                change_ids_revset(change_ids),
                 "-d",
                 destination,
             ),
@@ -970,10 +967,7 @@ class JjClient:
         stdout = self._run_git(
             ("rev-parse", *(f"{commit_id}^{{tree}}" for commit_id in ordered_commit_ids))
         )
-        tree_ids = tuple(line.strip() for line in stdout.splitlines() if line.strip())
-        if len(tree_ids) != len(ordered_commit_ids):
-            raise JjCommandError(t"{ui.cmd('git rev-parse')} returned incomplete tree data.")
-        return dict(zip(ordered_commit_ids, tree_ids, strict=True))
+        return dict(zip(ordered_commit_ids, stdout.split(), strict=True))
 
     def abandon_commits(self, commit_ids: Sequence[CommitId]) -> None:
         """Abandon commits, rebasing descendants and removing bookmarks that point to them."""
@@ -1071,10 +1065,7 @@ class JjClient:
         """Resolve the Git object store used by this jj repo."""
 
         if self._git_root is None:
-            rendered = self._run_jj(("git", "root")).strip()
-            if not rendered:
-                raise JjCommandError(f"{ui.cmd('jj git root')} returned an empty path.")
-            self._git_root = Path(rendered)
+            self._git_root = Path(self._run_jj(("git", "root")).strip())
         return self._git_root
 
     def _git_remote(self, remote: str) -> GitRemote:
@@ -1101,19 +1092,9 @@ class JjClient:
         """Return the effective origin for one jj config key, if it is set."""
 
         stdout = self._run_jj(("config", "list", key, "-T", _CONFIG_ORIGIN_TEMPLATE))
-        lines = tuple(line for line in stdout.splitlines() if line.strip())
-        if not lines:
+        if not stdout.strip():
             return None
-        if len(lines) != 1:
-            raise JjCommandError(
-                t"{ui.cmd('jj config list')} returned multiple effective values for "
-                t"{ui.code(key)}."
-            )
-        return _parse_json_line(
-            lines[0],
-            command="jj config list",
-            model=_ConfigOrigin,
-        )
+        return _parse_json_line(stdout, command="jj config list", model=_ConfigOrigin)
 
     def _local_bookmark_targets(self, bookmark: str) -> tuple[CommitId, ...]:
         """Return targets of the named local bookmark, excluding remote entries."""
