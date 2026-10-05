@@ -17,21 +17,12 @@ class GithubCheckCounts(BaseModel):
 
     @property
     def remaining(self) -> int | None:
-        if self.runs is None or self.statuses is None:
-            return None
-        return sum(
-            item.count
-            for item in (*self.runs, *self.statuses)
-            if item.state in {"EXPECTED", "PENDING", "QUEUED", "IN_PROGRESS", "WAITING"}
-        )
+        return self._count({"EXPECTED", "PENDING", "QUEUED", "IN_PROGRESS", "WAITING"})
 
     @property
-    def failed(self) -> int:
-        return sum(
-            item.count
-            for item in (*(self.runs or ()), *(self.statuses or ()))
-            if item.state
-            in {
+    def failed(self) -> int | None:
+        return self._count(
+            {
                 "FAILURE",
                 "ERROR",
                 "ACTION_REQUIRED",
@@ -41,6 +32,11 @@ class GithubCheckCounts(BaseModel):
                 "STARTUP_FAILURE",
             }
         )
+
+    def _count(self, states: set[str]) -> int | None:
+        if self.runs is None or self.statuses is None:
+            return None
+        return sum(item.count for item in (*self.runs, *self.statuses) if item.state in states)
 
 
 class GithubMergeQueueEntry(BaseModel):
