@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import textwrap
-from argparse import SUPPRESS, ArgumentParser, _SubParsersAction
+from argparse import SUPPRESS, Action, ArgumentParser, _ActionsContainer, _SubParsersAction
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from html import escape
@@ -60,7 +60,7 @@ _HELP_SECTIONS_ATTRIBUTE = "_jj_stack_help_sections"
 
 
 def add_help_argument(
-    parser: Any,
+    parser: _ActionsContainer,
     *name_or_flags: str,
     help: ui.Message | str,
     **kwargs: Any,
@@ -295,7 +295,7 @@ def _command_list_html(
     return '<dl class="cli-reference-list">\n' + "\n".join(rows) + "\n</dl>"
 
 
-def _action_list_html(actions: Sequence[Any]) -> str:
+def _action_list_html(actions: Sequence[Action]) -> str:
     rows = [
         f'<div class="cli-reference-row"><dt>{_action_label_html(action)}</dt>'
         f"<dd>{_action_help_html(action)}</dd></div>"
@@ -304,7 +304,7 @@ def _action_list_html(actions: Sequence[Any]) -> str:
     return '<dl class="cli-reference-list">\n' + "\n".join(rows) + "\n</dl>"
 
 
-def _action_label_html(action: Any) -> str:
+def _action_label_html(action: Action) -> str:
     if not action.option_strings:
         label = escape(str(action.metavar or action.dest))
         return f'<code class="cli-argument"><var class="cli-metavar">{label}</var></code>'
@@ -317,7 +317,7 @@ def _action_label_html(action: Any) -> str:
     return f'<code class="cli-argument">{options} <var class="cli-metavar">{metavar}</var></code>'
 
 
-def _action_help_html(action: Any) -> str:
+def _action_help_html(action: Action) -> str:
     content = getattr(action, _ACTION_HELP_RENDERABLE_ATTRIBUTE, action.help or "")
     return _message_html(content)
 
@@ -581,14 +581,14 @@ def _help_heading(text: str) -> ui.SemanticText:
     return ui.semantic_text(text, "hint", "heading")
 
 
-def _action_help_body(action: Any) -> ui.Message | str:
+def _action_help_body(action: Action) -> ui.Message | str:
     content = getattr(action, _ACTION_HELP_RENDERABLE_ATTRIBUTE, None)
     if content is not None:
         return content
     return "\n\n".join(_help_paragraphs(action.help or ""))
 
 
-def _action_label_message(action) -> ui.Message:
+def _action_label_message(action: Action) -> ui.Message:
     if not action.option_strings:
         return ui.cmd(str(action.metavar or action.dest))
     label = ", ".join(action.option_strings)
@@ -613,13 +613,15 @@ def _emit_help_table_section(title: str, rows: Sequence[tuple[ui.Message, ui.Tab
     )
 
 
-def _is_common_option_action(action: Any) -> bool:
+def _is_common_option_action(action: Action) -> bool:
     return bool(action.option_strings) and all(
         option in _COMMON_OPTION_STRINGS for option in action.option_strings
     )
 
 
-def _action_rows(actions: Sequence[Any]) -> tuple[tuple[ui.Message, ui.TableCell], ...] | None:
+def _action_rows(
+    actions: Sequence[Action],
+) -> tuple[tuple[ui.Message, ui.TableCell], ...] | None:
     visible_actions = _visible_actions(actions)
     if not visible_actions:
         return None
@@ -632,7 +634,7 @@ def _action_rows(actions: Sequence[Any]) -> tuple[tuple[ui.Message, ui.TableCell
     )
 
 
-def _visible_actions(actions: Sequence[Any]) -> tuple[Any, ...]:
+def _visible_actions(actions: Sequence[Action]) -> tuple[Action, ...]:
     return tuple(action for action in actions if action.help is not SUPPRESS)
 
 
@@ -640,7 +642,7 @@ def _top_level_option_actions(
     parser: ArgumentParser,
     *,
     include_hidden: bool,
-) -> tuple[Any, ...]:
+) -> tuple[Action, ...]:
     return tuple(
         action
         for action in parser._actions
