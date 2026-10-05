@@ -45,6 +45,10 @@ complexity:
 dead-code *paths='src tests tools':
     uv run vulture {{paths}}
 
+# Type-check edited copies to find unread fields, unused defaults, and unneeded `| None`.
+dead-code-probe *paths='src':
+    uv run tools/probe_dead_code.py {{paths}}
+
 # Run generated client and server command sequences; arguments pass through to the runner.
 [positional-arguments]
 property *args:

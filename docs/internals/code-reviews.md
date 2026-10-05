@@ -63,9 +63,13 @@ Look for dead code, duplicated logic, policy in adapters or rendering, vague nam
 layers that add no useful separation. Validation should serve a demonstrated need.
 
 `just dead-code` lists unreferenced functions, classes, and variables, and `just dead-code src`
-also lists production code that only tests use. It matches by name, so it misses unused
-parameters and defaults. Removing dead code can leave more behind, so repeat until it reports
-nothing. Add names that frameworks call to `[tool.vulture]` in `pyproject.toml`.
+also lists production code that only tests use. It matches by name, so a method that shares its
+name with a used one looks live. `just dead-code-probe` takes a few minutes and finds what name
+matching misses: it renames each field and method, drops each parameter default, and drops each
+`| None` in a scratch copy, then reports the ones the type checker does not notice. Both report
+candidates to check, not proof. Removing dead code can leave more behind, so repeat until both
+report nothing new. Add names that frameworks call to `[tool.vulture]` in `pyproject.toml`; the
+probe skips them too.
 
 Use precise types in domain APIs. Dynamic types and casts can be necessary at argument parsing,
 async protocols, or untrusted-JSON boundaries; narrow them there. Flag `Any`, `object`, `cast`, or
