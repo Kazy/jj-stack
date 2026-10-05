@@ -32,7 +32,6 @@ def test_failed_observation_finishes_reads_and_local_worker_before_returning(
     context = CommandContext(
         config=AppConfig(),
         jj_client=jj_client,
-        repo_root=tmp_path,
         state_store=TrackingStore(tmp_path / "state.json"),
     )
     github = Mock(spec=GithubClient)

@@ -38,7 +38,6 @@ def fake_command_context(
     return CommandContext(
         config=config if config is not None else AppConfig(),
         jj_client=jj_client if jj_client is not None else JjClient(repo_root),
-        repo_root=repo_root,
         state_store=cast(
             TrackingStore,
             InMemoryTrackingStore(TrackingState()),

@@ -45,7 +45,6 @@ class CommandContext:
 
     config: AppConfig
     jj_client: JjClient
-    repo_root: Path
     state_store: TrackingStore
 
     def open_github_client(
@@ -78,7 +77,6 @@ def bootstrap_context(
     return CommandContext(
         config=config,
         jj_client=jj_client,
-        repo_root=repo_root,
         state_store=TrackingStore.for_repo(repo_root),
     )
 
