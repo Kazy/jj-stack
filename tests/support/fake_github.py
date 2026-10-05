@@ -493,7 +493,6 @@ class FakeGithubRepo:
             "allow_rebase_merge": self.allow_rebase_merge,
             "allow_squash_merge": self.allow_squash_merge,
             "default_branch": self.default_branch,
-            "delete_branch_on_merge": self.delete_branch_on_merge,
             "full_name": self.full_name,
             "node_id": self.node_id,
             "permissions": {"push": self.push_permission},
@@ -1690,7 +1689,6 @@ def _stack_pr_payload(
         "head": {"ref": pr.head_ref, "sha": pr.head_sha},
         "merged_at": pr.merged_at,
         "number": pr_number,
-        "state": pr.state,
     }
 
 
