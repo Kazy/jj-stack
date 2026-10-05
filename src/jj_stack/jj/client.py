@@ -139,9 +139,6 @@ class JjWorkspace(BaseModel):
     root: Path | None
 
 
-ExpectedGitChangeId = ChangeId | None | tuple[ChangeId | None, ...]
-
-
 class _ConfigOrigin(BaseModel):
     model_config = ConfigDict(frozen=True, extra="ignore", strict=True)
 
@@ -682,7 +679,7 @@ class JjClient:
         remote: str,
         branch: str,
         expected_target: CommitId,
-        expected_chain: Sequence[tuple[CommitId, ExpectedGitChangeId]] = (),
+        expected_chain: Sequence[tuple[CommitId, tuple[ChangeId | None, ...]]] = (),
         base_descends_from: CommitId | None = None,
         base_ancestor_of: CommitId | None = None,
     ) -> Iterator[LocalCommit]:
@@ -691,8 +688,8 @@ class JjClient:
         An expected chain guards every member's raw Git change ID and single-parent ancestry.
         The chain's base, the bottom member's parent, must descend from base_descends_from and
         be an ancestor of base_ancestor_of when those are given: GitHub roots rewritten members
-        on trunk's tip at rewrite time, which may be past the merge result. A tuple accepts any
-        listed ID, including a missing change-ID header represented by `None`.
+        on trunk's tip at rewrite time, which may be past the merge result. Each member accepts
+        any listed change ID, including a missing change-ID header represented by `None`.
         """
 
         ref = f"refs/heads/{branch}"
@@ -713,29 +710,26 @@ class JjClient:
                     t"Remote branch {ui.bookmark(branch)} changed while it was being imported.",
                     condition="remote_branch_moved",
                 )
-            if expected_chain:
-                expected_parent: CommitId | None = None
-                for target, expected_git_change_id in expected_chain:
-                    actual = self._read_git_commit_metadata(target)
-                    if (
-                        not _expected_git_change_id_matches(
-                            expected_git_change_id, actual.change_id
+            expected_parent: CommitId | None = None
+            for target, accepted_change_ids in expected_chain:
+                actual = self._read_git_commit_metadata(target)
+                if (
+                    actual.change_id not in accepted_change_ids
+                    or len(actual.parents) != 1
+                    or (expected_parent is not None and actual.parents != (expected_parent,))
+                    or (
+                        expected_parent is None
+                        and not self._git_commit_in_range(
+                            actual.parents[0],
+                            after=base_descends_from,
+                            within=base_ancestor_of,
                         )
-                        or len(actual.parents) != 1
-                        or (expected_parent is not None and actual.parents != (expected_parent,))
-                        or (
-                            expected_parent is None
-                            and not self._git_commit_in_range(
-                                actual.parents[0],
-                                after=base_descends_from,
-                                within=base_ancestor_of,
-                            )
-                        )
-                    ):
-                        raise CliError(
-                            "Imported pull request heads no longer form the expected stack."
-                        )
-                    expected_parent = target
+                    )
+                ):
+                    raise CliError(
+                        "Imported pull request heads no longer form the expected stack."
+                    )
+                expected_parent = target
             self._run_jj(("git", "import"))
             change = self.resolve_commit(quote_revset_symbol(_PR_BRANCH_TEMP_BOOKMARK))
             if change.commit_id != expected_target:
@@ -1367,14 +1361,6 @@ def change_ids_revset(change_ids: Sequence[ChangeId]) -> str:
     return _union_revset_symbols(
         tuple(f"change_id({quote_revset_symbol(change_id)})" for change_id in change_ids)
     )
-
-
-def _expected_git_change_id_matches(
-    expected: ExpectedGitChangeId,
-    actual: ChangeId | None,
-) -> bool:
-    accepted = expected if isinstance(expected, tuple) else (expected,)
-    return actual in accepted
 
 
 def _union_revset_symbols(symbols: Sequence[str]) -> str:
