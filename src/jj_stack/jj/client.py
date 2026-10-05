@@ -490,9 +490,7 @@ class JjClient:
         """Return changes blocked by the repo's git.private-commits policy."""
 
         private_commits_revset = self.get_config_string("git.private-commits")
-        if not private_commits_revset or not changes:
-            return ()
-        if private_commits_revset == "none()":
+        if private_commits_revset in (None, "", "none()") or not changes:
             return ()
         commit_ids_revset = " | ".join(quote_revset_symbol(r.commit_id) for r in changes)
         combined_revset = f"({private_commits_revset}) & ({commit_ids_revset})"
