@@ -52,7 +52,7 @@ class OperationLock:
     def __init__(
         self,
         *,
-        file,
+        file: BinaryIO,
         holder_path: Path,
     ) -> None:
         self._file = file
