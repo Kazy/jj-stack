@@ -1379,19 +1379,10 @@ def _register_pr_routes(app: FastAPI, fake_state: FakeGithubState) -> None:
         pr = repo.prs.get(issue_number)
         if pr is None:
             raise HTTPException(status_code=404, detail="Not Found")
-        state = _require_string(payload, "state")
-        if state not in {"open", "closed"}:
+        # The client only closes pull requests through this route.
+        if _require_string(payload, "state") != "closed":
             raise HTTPException(status_code=422, detail="Unsupported issue state.")
-        if state == "open" and (
-            pr.merged_at is not None
-            or repo.ref_target(pr.head_ref) is None
-            or repo.ref_target(pr.base_ref) is None
-        ):
-            raise HTTPException(status_code=422, detail="Validation Failed")
-        repo.update_pr_state(
-            pr,
-            state=state,
-        )
+        repo.update_pr_state(pr, state="closed")
         return {}
 
     @app.post(

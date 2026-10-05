@@ -13,7 +13,6 @@ from jj_stack.github.resolution import GithubRepoAddress
 
 from ..support.fake_github import FakeGithubState, create_app
 from ..support.integration_helpers import (
-    delete_remote_ref,
     init_fake_github_repo_with_submitted_feature,
     init_fake_github_repo_with_submitted_stack,
     run_command,
@@ -22,50 +21,26 @@ from ..support.integration_helpers import (
 
 
 @pytest.mark.merge_recovery
-def test_fake_rejects_retargets_and_reopens_that_github_cannot_apply(tmp_path: Path) -> None:
+def test_fake_rejects_retargets_that_github_cannot_apply(tmp_path: Path) -> None:
     _repo, fake = init_fake_github_repo_with_submitted_feature(tmp_path)
     pr = fake.prs[1]
-    head = pr.head_sha
-    base = fake.ref_target("main")
-    assert base is not None
-    update_remote_ref(fake, branch="landed", target=head)
+    update_remote_ref(fake, branch="landed", target=pr.head_sha)
     app = create_app(FakeGithubState.single_repo(fake))
-    path = f"/repos/{fake.full_name}"
 
     async def exercise() -> None:
         transport = httpx2.ASGITransport(app=app)
-        async with (
-            httpx2.AsyncClient(base_url="https://api.github.test", transport=transport) as client,
-            GithubClient(
-                httpx2.AsyncClient(base_url="https://api.github.test", transport=transport),
-                repo=GithubRepoAddress(owner=fake.owner, repo=fake.name),
-            ) as github,
-        ):
+        async with GithubClient(
+            httpx2.AsyncClient(base_url="https://api.github.test", transport=transport),
+            repo=GithubRepoAddress(owner=fake.owner, repo=fake.name),
+        ) as github:
             with pytest.raises(GithubClientError):
                 await github.update_pr(pr_id=pr.node_id, base="landed")
             assert (pr.base_ref, pr.state, pr.merged_at) == ("main", "open", None)
 
-            assert (await client.patch(f"{path}/issues/1", json={"state": "closed"})).is_success
+            await github.close_pr(pr_number=1)
             with pytest.raises(GithubClientError):
                 await github.update_pr(pr_id=pr.node_id, base="landed")
             assert pr.base_ref == "main"
-
-            for branch, commit in ((pr.head_ref, head), ("main", base)):
-                delete_remote_ref(fake, branch=branch)
-                response = await client.patch(f"{path}/issues/1", json={"state": "open"})
-                assert response.status_code == 422
-                observed = await github.get_pr(pr_number=1)
-                assert observed.state == "closed"
-                assert observed.head.sha == head
-                update_remote_ref(fake, branch=branch, target=commit)
-
-            assert (await client.patch(f"{path}/issues/1", json={"state": "open"})).is_success
-            update_remote_ref(fake, branch="main", target=head)
-            observed = await github.get_pr(pr_number=1)
-            assert observed.state == "merged"
-            assert observed.merge_commit_sha == head
-            response = await client.patch(f"{path}/issues/1", json={"state": "open"})
-            assert response.status_code == 422
 
     asyncio.run(exercise())
 
