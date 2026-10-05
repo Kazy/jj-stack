@@ -607,7 +607,7 @@ def _emit_help_table_section(title: str, rows: Sequence[tuple[ui.Message, ui.Tab
                 ui.TableColumn(""),
             ),
             rows=tuple(rows),
-            box="",
+            box="none",
             show_header=False,
         )
     )

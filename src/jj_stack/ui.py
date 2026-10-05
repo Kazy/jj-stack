@@ -69,7 +69,7 @@ class DataTable:
 
     columns: tuple[TableColumn, ...]
     rows: tuple[tuple[TableCell, ...], ...]
-    box: str = "simple"
+    box: Literal["simple", "none"] = "simple"
     padding: int | tuple[int, int] | tuple[int, int, int, int] = (0, 0)
     show_header: bool = True
 
