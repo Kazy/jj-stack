@@ -176,7 +176,7 @@ async def lookup_pr_lookups_async(
     context: CommandContext,
     github_repo: GithubRepoAddress,
     observations: Mapping[str, ChangeObservation],
-    verbose: bool = False,
+    verbose: bool,
 ) -> dict[str, ChangeObservation]:
     """Look up the saved PR on each branch with a client for this repository."""
 

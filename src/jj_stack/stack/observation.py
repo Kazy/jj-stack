@@ -38,7 +38,7 @@ def observe_stack_commits(
     jj_client: JjClient,
     state: TrackingState,
     revset: str,
-    membership_revsets: Sequence[str] = (),
+    membership_revsets: Sequence[str],
     selected_revset: str | None = None,
 ) -> StackObservation:
     """Observe raw copies together, then distinguish a saved snapshot from its local rewrite."""

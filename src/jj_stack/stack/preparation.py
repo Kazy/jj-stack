@@ -30,9 +30,9 @@ class PreparedLocalStack:
 def prepare_local_stack(
     *,
     context: CommandContext,
-    fetch_remote_state: bool = False,
+    fetch_remote_state: bool,
     revset: str | None,
-    containing_change_id: str | None = None,
+    containing_change_id: str | None,
     inspection_mode: bool = False,
 ) -> PreparedLocalStack:
     """Resolve a local stack, tracking, and target before GitHub inspection."""

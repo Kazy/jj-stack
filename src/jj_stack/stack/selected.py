@@ -95,7 +95,7 @@ def select_stack_path(
 
 def select_stack_path_containing_change(
     *,
-    inspection_mode: bool = False,
+    inspection_mode: bool,
     change_id: str,
     jj_client: JjClient,
     state: TrackingState,
