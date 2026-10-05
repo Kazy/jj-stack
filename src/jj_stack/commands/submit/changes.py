@@ -9,9 +9,8 @@ import jj_stack.ui as ui
 from jj_stack.errors import CliError, DriftError
 from jj_stack.formatting import format_pr_label
 from jj_stack.identifiers import ChangeId, CommitId, short_change_id
-from jj_stack.models.git import GitRemote
 from jj_stack.models.github import GithubStack
-from jj_stack.models.stack import LocalCommit, LocalStack
+from jj_stack.models.stack import LocalStack
 from jj_stack.models.tracking import TrackedPR
 from jj_stack.stack.change_state import (
     UNOBSERVED,
@@ -34,7 +33,7 @@ from jj_stack.stack.github_stack_safety import github_rewrote_stack
 from jj_stack.stack.pr_branches import ResolvedPRBranch
 from jj_stack.ui import Message
 
-from .models import PreparedSubmitChange
+from .models import ExplicitBase, PreparedSubmitChange
 
 
 def prepare_submit_changes(
@@ -164,13 +163,10 @@ def _not_open_error(state: WithPR, *, hint: Message) -> DriftError:
 
 def require_published_base(
     *,
-    base: LocalCommit,
+    base: ExplicitBase,
     lookup: ChangeObservation,
-    merged_hint: Message,
-    remote: GitRemote,
     remote_target: CommitId | None,
-    retry: str,
-    tracked_base: TrackedPR,
+    stack: LocalStack,
 ) -> None:
     """Accept an explicit `--base` only while its PR, branch, and local copy all agree.
 
@@ -178,15 +174,16 @@ def require_published_base(
     user restores it externally before retrying.
     """
 
-    branch = tracked_base.pr_identity.head_ref
-    state = classify(replace(lookup, selected=base, remote_target=remote_target))
+    child_head = short_change_id(stack.head.change_id)
+    retry = f"jj-stack submit --base {short_change_id(base.change.change_id)} {child_head}"
+    state = classify(replace(lookup, selected=base.change, remote_target=remote_target))
     if isinstance(state, (PRHeadMoved, BranchMissing, BranchDisagrees)):
-        remote_branch = ui.bookmark(f"{branch}@{remote.name}")
-        expected = ui.semantic_text(tracked_base.submitted_baseline.commit_id, "commit_id")
+        remote_branch = ui.bookmark(f"{base.branch}@{lookup.remote_name}")
+        expected = ui.semantic_text(base.tracked.submitted_baseline.commit_id, "commit_id")
         raise DriftError(
             t"PR branch {remote_branch} no longer points to the submitted commit for base "
-            t"{ui.change_id(base.change_id)}. jj-stack left it untouched and cannot repair it "
-            t"automatically.",
+            t"{ui.change_id(base.change.change_id)}. jj-stack left it untouched and cannot "
+            t"repair it automatically.",
             condition="remote_branch_moved",
             hint=t"Move {remote_branch} back to commit {expected}, the commit last submitted "
             t"for the base, then run {ui.cmd(retry)}.",
@@ -194,7 +191,14 @@ def require_published_base(
     if isinstance(state, Stop):
         raise stop_error(state, rerun=retry)
     if isinstance(state, Merged):
-        raise _not_open_error(state, hint=merged_hint)
+        child_bottom = short_change_id(stack.changes[0].change_id)
+        child_rebase = f"jj rebase -s '{child_bottom}' -o 'trunk()'"
+        raise _not_open_error(
+            state,
+            hint=t"Sync the parent PR first, rebase only the child stack with "
+            t"{ui.cmd(child_rebase)}, and then run {ui.cmd(f'jj-stack submit {child_head}')} "
+            t"without {ui.cmd('--base')}.",
+        )
     if isinstance(state, Closed):
         raise _not_open_error(
             state,

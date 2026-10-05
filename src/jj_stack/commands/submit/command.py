@@ -523,25 +523,11 @@ async def _observe_submit(
     )
     bottom_base_branch = trunk_branch
     if explicit_base is not None:
-        child_bottom = short_change_id(stack.changes[0].change_id)
-        child_head = short_change_id(stack.head.change_id)
-        child_rebase = f"jj rebase -s '{child_bottom}' -o 'trunk()'"
         require_published_base(
-            base=explicit_base.change,
+            base=explicit_base,
             lookup=lookups[explicit_base.branch],
-            merged_hint=(
-                t"Sync the parent PR first, rebase only the child stack with "
-                t"{ui.cmd(child_rebase)}, and then run "
-                t"{ui.cmd(f'jj-stack submit {child_head}')} without "
-                t"{ui.cmd('--base')}."
-            ),
-            remote=remote,
             remote_target=remote_targets.get(explicit_base.branch),
-            retry=(
-                f"jj-stack submit --base {short_change_id(explicit_base.change.change_id)} "
-                f"{child_head}"
-            ),
-            tracked_base=explicit_base.tracked,
+            stack=stack,
         )
         bottom_base_branch = explicit_base.branch
     drafts: dict[ChangeId, bool] = {
