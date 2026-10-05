@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import jj_stack.ui as ui
 from jj_stack.errors import CliError
@@ -219,7 +219,7 @@ def _member_state(
     """Classify one tracked change with its trunk evidence, stopping on a broken saved link."""
 
     observed = observation.prs[change_id]
-    state = classify(observed, ancestries=ancestries, selected=selected)
+    state = classify(replace(observed, selected=selected), ancestries=ancestries)
     # GitHub itself moves the heads of a stack's active members when it merges or rebases the
     # stack; `_validate_active_member` and the commit and ancestry checks validate those changes.
     # Any other PR branch that moved or disappeared stops sync before it rewrites anything.

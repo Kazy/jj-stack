@@ -13,7 +13,7 @@ copies. This module classifies the change's relationship to GitHub, not its loca
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from string.templatelib import Template
 from typing import TypedDict, final, overload
 
@@ -476,7 +476,6 @@ class _WithPRCommon(_Common):
 def classify(
     observation: TrackedPRObservation,
     *,
-    selected: LocalCommit | None = None,
     ancestries: Mapping[CommitId, CommitAncestry] | None = None,
 ) -> TrackedPRState: ...
 
@@ -485,7 +484,6 @@ def classify(
 def classify(
     observation: ChangeObservation,
     *,
-    selected: LocalCommit | None = None,
     ancestries: Mapping[CommitId, CommitAncestry] | None = None,
 ) -> ChangeState: ...
 
@@ -493,14 +491,11 @@ def classify(
 def classify(
     observation: ChangeObservation,
     *,
-    selected: LocalCommit | None = None,
     ancestries: Mapping[CommitId, CommitAncestry] | None = None,
 ) -> ChangeState:
     """Derive one state from one observation; unobserved facts never produce a stop."""
 
     o = observation
-    if selected is not None:
-        o = replace(o, selected=selected)
     common = _Common(
         change_id=o.change_id,
         branch=o.branch,

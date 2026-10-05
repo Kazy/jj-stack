@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 import jj_stack.ui as ui
@@ -187,7 +187,7 @@ def _merge_change_precondition_error(
         (commit for commit in observed.local if commit.commit_id == change.commit_id),
         None,
     )
-    state = classify(observed, selected=selected)
+    state = classify(replace(observed, selected=selected))
     if isinstance(state, (PRMissing, PRAmbiguous, PRIdentityMismatch)):
         return t"{state.reason}; {state.repair}"
     pr = state.pr
