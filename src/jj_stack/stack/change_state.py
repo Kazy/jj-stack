@@ -13,7 +13,7 @@ copies. This module classifies the change's relationship to GitHub, not its loca
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from string.templatelib import Template
 from typing import TypedDict, final, overload
 
@@ -73,7 +73,7 @@ class TrackedPRObservation(ChangeObservation):
     """A saved PR looked up successfully by number; None means GitHub reports it absent."""
 
     tracked: TrackedPR
-    pr: GithubPR | None = field()
+    pr: GithubPR | None
     open_prs_on_branch: tuple[GithubPR, ...] | Unobserved = UNOBSERVED
 
 
@@ -94,16 +94,6 @@ class _State:
             return True
         return any(commit.divergent for commit in self.local)
 
-    @property
-    def has_local_edits(self) -> bool:
-        """Whether the selected local commit differs from the submitted baseline."""
-
-        return (
-            self.tracked is not None
-            and self.selected is not None
-            and self.selected.commit_id != self.tracked.submitted_baseline.commit_id
-        )
-
     def _branch_label(self) -> Message:
         branch = self.branch or "?"
         return ui.bookmark(f"{branch}@{self.remote_name}" if self.remote_name else branch)
@@ -120,6 +110,15 @@ class WithPR(_State):
     # Why PR or ancestry checks did not confirm the submitted work on trunk.
     # None when those checks passed or trunk was not inspected.
     trunk_evidence_reason: Message | None = None
+
+    @property
+    def has_local_edits(self) -> bool:
+        """Whether the selected local commit differs from the submitted baseline."""
+
+        return (
+            self.selected is not None
+            and self.selected.commit_id != self.tracked.submitted_baseline.commit_id
+        )
 
 
 class Stop:
