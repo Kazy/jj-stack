@@ -219,7 +219,7 @@ _STATUS_LABELS: dict[ReportStatus, tuple[str, str, str | None]] = {
 }
 
 
-def status_label(status: ReportStatus, *, count: int = 1) -> ui.Message:
+def status_label(status: ReportStatus, *, count: int = 1) -> str | ui.SemanticText:
     singular, plural, severity = _STATUS_LABELS[status]
     label = singular if count == 1 else f"{count} {plural}"
     return label if severity is None else ui.semantic_text(label, severity, "heading")

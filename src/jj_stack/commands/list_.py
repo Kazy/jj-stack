@@ -416,12 +416,12 @@ def _check_and_warning_fragments(
     return tuple(fragments)
 
 
-def _linked(label: ui.Message, url: str | None) -> ui.Message:
+def _linked(label: str | ui.SemanticText, url: str | None) -> ui.Message:
     if url is None:
         return label
     if isinstance(label, ui.SemanticText):
         return replace(label, link=url)
-    return ui.hyperlink(label, url) if isinstance(label, str) else label
+    return ui.hyperlink(label, url)
 
 
 def _pr_references_from_changes(
