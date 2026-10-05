@@ -20,7 +20,7 @@ names the PR or stack to update before retrying cleanup.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable
 from contextlib import nullcontext
 from dataclasses import dataclass, replace
 
@@ -81,6 +81,19 @@ class PreparedCleanup:
     dry_run: bool
     github_target: GithubTarget | UnresolvedGithubTarget
     state: TrackingState
+    # Dry-run previews assume these PRs lose their dependents and these changes leave history.
+    preview_detached_dependents: frozenset[int] = frozenset()
+    preview_local_removals: frozenset[ChangeId] = frozenset()
+
+
+@dataclass(frozen=True, slots=True)
+class _CleanupPass:
+    """Inputs shared by every PR in one cleanup pass against GitHub."""
+
+    github_client: GithubClient
+    prepared: PreparedCleanup
+    record_action: Callable[[CleanupAction], None]
+    remote: GitRemote
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,6 +191,8 @@ async def cleanup_tracked_prs(
         dry_run=dry_run,
         github_target=run.target,
         state=state,
+        preview_detached_dependents=planned_detached_dependents if dry_run else frozenset(),
+        preview_local_removals=planned_local_removals if dry_run else frozenset(),
     )
 
     def retry_hint() -> ui.Message:
@@ -193,10 +208,7 @@ async def cleanup_tracked_prs(
 
     try:
         actions = await _run_cleanup_async(
-            github_client=run.github,
-            prepared_cleanup=prepared_cleanup,
-            preview_detached_dependents=(planned_detached_dependents if dry_run else frozenset()),
-            preview_local_removals=(planned_local_removals if dry_run else frozenset()),
+            github_client=run.github, prepared_cleanup=prepared_cleanup
         )
     except (CliError, GithubClientError) as error:
         if error_hint(error) is not None:
@@ -338,8 +350,6 @@ async def _run_cleanup_async(
     *,
     github_client: GithubClient | None = None,
     prepared_cleanup: PreparedCleanup,
-    preview_detached_dependents: frozenset[int] = frozenset(),
-    preview_local_removals: frozenset[ChangeId] = frozenset(),
 ) -> tuple[CleanupAction, ...]:
     actions: list[CleanupAction] = []
 
@@ -363,13 +373,7 @@ async def _run_cleanup_async(
         )
         async with client_context as client:
             await _run_tracked_pr_cleanup_pass(
-                github_client=client,
-                candidates=candidates,
-                prepared_cleanup=prepared_cleanup,
-                preview_detached_dependents=preview_detached_dependents,
-                preview_local_removals=preview_local_removals,
-                record_action=record_action,
-                remote=github_target.remote,
+                _CleanupPass(client, prepared_cleanup, record_action, github_target.remote)
             )
     elif candidates:
         for change_id, candidate in candidates.items():
@@ -385,26 +389,19 @@ async def _run_cleanup_async(
     return tuple(actions)
 
 
-async def _run_tracked_pr_cleanup_pass(
-    *,
-    github_client: GithubClient,
-    candidates: Mapping[ChangeId, TrackedPR],
-    prepared_cleanup: PreparedCleanup,
-    preview_detached_dependents: frozenset[int],
-    preview_local_removals: frozenset[ChangeId],
-    record_action: Callable[[CleanupAction], None],
-    remote: GitRemote,
-) -> None:
+async def _run_tracked_pr_cleanup_pass(cleanup_pass: _CleanupPass) -> None:
     """Clean up closed PRs, skipping open PRs and ambiguous links."""
 
-    remote_name = remote.name
+    prepared_cleanup = cleanup_pass.prepared
+    candidates = prepared_cleanup.candidates
+    github_client = cleanup_pass.github_client
     observation = await observe_prs(
         change_ids=tuple(candidates),
         context=prepared_cleanup.context,
         github_client=github_client,
         include_dependents=True,
         include_open_head_prs=True,
-        remote_name=remote_name,
+        remote_name=cleanup_pass.remote.name,
         state=prepared_cleanup.state,
     )
     preflights: dict[ChangeId, CleanupPreflight] = {}
@@ -414,8 +411,6 @@ async def _run_tracked_pr_cleanup_pass(
             initial_observation=observation,
             change_id=change_id,
             prepared_cleanup=prepared_cleanup,
-            preview_detached_dependents=preview_detached_dependents,
-            preview_local_removals=preview_local_removals,
         )
         preflights[change_id] = preflight
         if isinstance(preflight, PRCleanup):
@@ -431,7 +426,7 @@ async def _run_tracked_pr_cleanup_pass(
         trunk_branch, _targets = observe_trunk_branch(
             jj_client=jj_client,
             github_repo_state=observation.github_repo,
-            remote=remote,
+            remote=cleanup_pass.remote,
             trunk_commit_id=trunk_commit_id,
         )
         preflights.update(
@@ -448,13 +443,10 @@ async def _run_tracked_pr_cleanup_pass(
     )
     for change_id, candidate in candidates.items():
         stop_after_failure = await _cleanup_tracked_pr(
-            github_client=github_client,
+            cleanup_pass,
             preflight=preflights[change_id],
             candidate=candidate,
             change_id=change_id,
-            prepared_cleanup=prepared_cleanup,
-            record_action=record_action,
-            remote_name=remote_name,
             stack_blocker=stack_blockers.get(candidate.pr_identity.pr_number),
             overview_comments=overview_comments,
         )
@@ -487,19 +479,18 @@ async def _observe_cleanup_secondary_facts(
 
 
 async def _cleanup_tracked_pr(
+    cleanup_pass: _CleanupPass,
     *,
-    github_client: GithubClient,
     preflight: CleanupPreflight,
     candidate: TrackedPR,
     change_id: ChangeId,
-    prepared_cleanup: PreparedCleanup,
-    record_action: Callable[[CleanupAction], None],
-    remote_name: str,
     stack_blocker: CleanupAction | None,
     overview_comments: dict[int, GithubIssueComment | None],
 ) -> bool:
     """Apply one planned cleanup, returning whether a partial failure must stop the pass."""
 
+    dry_run = cleanup_pass.prepared.dry_run
+    record_action = cleanup_pass.record_action
     identity = candidate.pr_identity
     if not isinstance(preflight, PRCleanup):
         if preflight is not None:
@@ -516,9 +507,9 @@ async def _cleanup_tracked_pr(
         body = t"close {pr_label}"
         if pr.base.ref != trunk_branch:
             body = t"retarget {pr_label} to {ui.bookmark(trunk_branch)}, then close it"
-        if not prepared_cleanup.dry_run:
+        if not dry_run:
             reason = await close_pr_on_trunk(
-                github_client=github_client,
+                github_client=cleanup_pass.github_client,
                 pr=pr,
                 trunk_branch=trunk_branch,
             )
@@ -528,20 +519,17 @@ async def _cleanup_tracked_pr(
         record_action(
             CleanupAction(
                 kind="pull request",
-                status="planned" if prepared_cleanup.dry_run else "applied",
+                status="planned" if dry_run else "applied",
                 body=body,
             )
         )
     return await _apply_tracked_pr_cleanup(
+        cleanup_pass,
         branch_update=preflight.update,
         overview_comment=overview_comment,
-        github_client=github_client,
         pr=pr,
         candidate=candidate,
         change_id=change_id,
-        prepared_cleanup=prepared_cleanup,
-        record_action=record_action,
-        remote_name=remote_name,
     )
 
 
@@ -550,8 +538,6 @@ def _preflight_tracked_pr_cleanup(
     initial_observation: RepoFacts,
     change_id: ChangeId,
     prepared_cleanup: PreparedCleanup,
-    preview_detached_dependents: frozenset[int],
-    preview_local_removals: frozenset[ChangeId],
 ) -> CleanupPreflight:
     state = classify(initial_observation.prs[change_id])
     if isinstance(state, UNTRUSTED_PR_STATES):
@@ -570,14 +556,14 @@ def _preflight_tracked_pr_cleanup(
         )
     update, blocker = plan_pr_cleanup(
         observation=initial_observation,
-        preview_detached_dependents=preview_detached_dependents,
+        preview_detached_dependents=prepared_cleanup.preview_detached_dependents,
         state=state,
     )
     if blocker is not None:
         return blocker
     if (
         pr.state == "merged"
-        and change_id not in preview_local_removals
+        and change_id not in prepared_cleanup.preview_local_removals
         and any(not commit.immutable for commit in local_commits)
     ):
         pr_label = format_pr_label(pr.number, url=pr.html_url)
@@ -592,19 +578,18 @@ def _preflight_tracked_pr_cleanup(
 
 
 async def _apply_tracked_pr_cleanup(
+    cleanup_pass: _CleanupPass,
     *,
     branch_update: PRRefUpdate | None,
     overview_comment: GithubIssueComment | None,
-    github_client: GithubClient,
     pr: GithubPR,
     candidate: TrackedPR,
     change_id: ChangeId,
-    prepared_cleanup: PreparedCleanup,
-    record_action: Callable[[CleanupAction], None],
-    remote_name: str,
 ) -> bool:
     """Apply checked cleanup, returning whether a partial failure must stop the pass."""
 
+    prepared_cleanup = cleanup_pass.prepared
+    record_action = cleanup_pass.record_action
     mutation_started = not prepared_cleanup.dry_run and (
         branch_update is not None or overview_comment is not None
     )
@@ -612,13 +597,13 @@ async def _apply_tracked_pr_cleanup(
         dry_run=prepared_cleanup.dry_run,
         jj_client=prepared_cleanup.context.jj_client,
         record_action=record_action,
-        remote_name=remote_name,
+        remote_name=cleanup_pass.remote.name,
         update=branch_update,
     )
     comment_actions, comments_current = await apply_overview_comment_cleanup(
         comment=overview_comment,
         dry_run=prepared_cleanup.dry_run,
-        github_client=github_client,
+        github_client=cleanup_pass.github_client,
         pr_number=candidate.pr_identity.pr_number,
     )
     for action in comment_actions:
