@@ -583,7 +583,6 @@ async def _observe_submit(
         is_maximal_path=selection.is_maximal_path,
         descriptions=options.descriptions,
         describe_with=options.describe_with,
-        explicit_base=explicit_base,
     )
     prepared_changes = prepare_submit_changes(
         branch_resolutions=branch_resolutions,

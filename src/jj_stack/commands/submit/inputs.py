@@ -89,7 +89,6 @@ def prepare_publication_inputs(
     is_maximal_path: bool,
     descriptions: tuple[str, ...] = (),
     describe_with: str | None = None,
-    explicit_base: ExplicitBase | None = None,
 ) -> PublicationInputs:
     client = context.jj_client
     (
@@ -112,7 +111,6 @@ def prepare_publication_inputs(
     )
     return PublicationInputs(
         client=client,
-        explicit_base=explicit_base,
         generated_pr_descriptions=generated_pr_descriptions,
         generated_stack_description=generated_stack_description,
         is_maximal_path=is_maximal_path,

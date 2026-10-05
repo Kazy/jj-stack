@@ -149,7 +149,6 @@ class PublicationInputs:
     """Publication inputs prepared before GitHub mutations begin."""
 
     client: JjClient
-    explicit_base: ExplicitBase | None
     generated_pr_descriptions: dict[ChangeId, GeneratedDescription]
     generated_stack_description: GeneratedDescription | None
     is_maximal_path: bool
