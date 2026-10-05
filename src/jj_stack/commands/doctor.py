@@ -18,7 +18,6 @@ import asyncio
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 import jj_stack.console as console
 import jj_stack.ui as ui
@@ -49,7 +48,7 @@ HELP = "Check repo setup and GitHub connectivity"
 @dataclass(slots=True, frozen=True)
 class CheckResult:
     label: str
-    status: Literal["ok", "warn", "fail", "fixed", "skip"]
+    status: ui.StatusValue
     detail: Message
 
 
@@ -91,7 +90,6 @@ async def _run_checks(
 ) -> list[CheckResult]:
     results: list[CheckResult] = []
 
-    # Check 1: Git remote selection
     remote_result, selected_remote = _check_git_remote(context=context)
     results.append(remote_result)
 
@@ -114,7 +112,6 @@ async def _run_checks(
     results.append(_check_pr_bookmarks(context=context, fix=fix))
     results.append(_check_pr_branch_temp(context=context, fix=fix))
 
-    # Check 2: GitHub remote parsing
     github_result, parsed_repo = _check_github_remote(selected_remote)
     results.append(github_result)
 
@@ -122,7 +119,6 @@ async def _run_checks(
         results.extend(_skipped("GitHub auth", *_GITHUB_CHECKS))
         return results
 
-    # Check 3: GitHub auth
     auth_result, token = _check_github_auth()
     results.append(auth_result)
 
@@ -130,7 +126,6 @@ async def _run_checks(
         results.extend(_skipped(*_GITHUB_CHECKS))
         return results
 
-    # Checks 4-7: connectivity, push access, Stacks API availability, and trunk branch
     results.extend(
         await _check_github_access(context=context, parsed_repo=parsed_repo, token=token)
     )
