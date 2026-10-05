@@ -163,11 +163,11 @@ class _ConfiguredConsole:
 
     def print(
         self,
-        *objects,
+        *objects: RenderableType,
         end: str = "\n",
-        style=None,
-        markup=None,
-        soft_wrap=None,
+        style: Style | str | None = None,
+        markup: bool | None = None,
+        soft_wrap: bool = False,
     ) -> None:
         if self._start is None:
             self._console.print(
@@ -487,17 +487,23 @@ def _coerce_renderable(value: ConsoleObject) -> RenderableType:
 
 
 def _print(
-    kind: str, console: _ConfiguredConsole, objects: tuple[ConsoleObject, ...], kwargs: dict
+    kind: str,
+    console: _ConfiguredConsole,
+    objects: tuple[ConsoleObject, ...],
+    *,
+    end: str = "\n",
+    style: Style | str | None = None,
+    soft_wrap: bool,
 ) -> None:
     renderables = tuple(_coerce_renderable(obj) for obj in objects)
     if not _JSONL:
-        console.print(*renderables, **kwargs)
+        console.print(*renderables, end=end, style=style, soft_wrap=soft_wrap)
         return
     # Render as a wide, colorless terminal would, so tables and hanging indents keep their
     # shape while the record carries only text.
     buffer = io.StringIO()
     Console(file=buffer, force_terminal=False, no_color=True, width=10_000).print(
-        *renderables, **kwargs
+        *renderables, end=end, style=style, soft_wrap=soft_wrap
     )
     _write_jsonl({"type": kind, "text": buffer.getvalue().rstrip("\n")})
 
@@ -507,10 +513,10 @@ def _write_jsonl(record: dict[str, object]) -> None:
     _STDOUT_STREAM.flush()
 
 
-def output(*objects: ConsoleObject, **kwargs) -> None:
+def output(*objects: ConsoleObject, end: str = "\n", soft_wrap: bool = False) -> None:
     """Write plain user-facing output to stdout."""
 
-    _print("output", _STDOUT_CONSOLE, objects, kwargs)
+    _print("output", _STDOUT_CONSOLE, objects, end=end, soft_wrap=soft_wrap)
 
 
 def machine_output(payload: object) -> None:
@@ -530,24 +536,24 @@ def jsonl_record(record: dict[str, object]) -> None:
         _write_jsonl(record)
 
 
-def error(*objects: ConsoleObject, **kwargs) -> None:
+def error(*objects: ConsoleObject, soft_wrap: bool = False) -> None:
     """Write styled error output to stderr."""
 
-    kwargs.setdefault("style", semantic_style("error heading") or "red")
-    _print("error", _STDERR_CONSOLE, objects, kwargs)
+    style = semantic_style("error heading") or "red"
+    _print("error", _STDERR_CONSOLE, objects, style=style, soft_wrap=soft_wrap)
 
 
-def stderr_output(*objects: ConsoleObject, **kwargs) -> None:
+def stderr_output(*objects: ConsoleObject, soft_wrap: bool = False) -> None:
     """Write plain user-facing output to stderr."""
 
-    _print("output", _STDERR_CONSOLE, objects, kwargs)
+    _print("output", _STDERR_CONSOLE, objects, soft_wrap=soft_wrap)
 
 
-def warning(*objects: ConsoleObject, **kwargs) -> None:
+def warning(*objects: ConsoleObject, soft_wrap: bool = False) -> None:
     """Write styled warning output to stderr."""
 
-    kwargs.setdefault("style", semantic_style("warning heading") or "yellow")
-    _print("warning", _STDERR_CONSOLE, objects, kwargs)
+    style = semantic_style("warning heading") or "yellow"
+    _print("warning", _STDERR_CONSOLE, objects, style=style, soft_wrap=soft_wrap)
 
 
 def action_row(*, kind: str | None, status: ActionStatus, body: ui.Message) -> None:
@@ -569,11 +575,11 @@ def action_row(*, kind: str | None, status: ActionStatus, body: ui.Message) -> N
     )
 
 
-def note(*objects: ConsoleObject, **kwargs) -> None:
+def note(*objects: ConsoleObject, soft_wrap: bool = False) -> None:
     """Write styled note output to stdout."""
 
-    kwargs.setdefault("style", semantic_style("hint heading") or "cyan")
-    _print("note", _STDOUT_CONSOLE, objects, kwargs)
+    style = semantic_style("hint heading") or "cyan"
+    _print("note", _STDOUT_CONSOLE, objects, style=style, soft_wrap=soft_wrap)
 
 
 @contextmanager
