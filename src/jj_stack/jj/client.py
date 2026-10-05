@@ -169,10 +169,6 @@ class _CommitDiffStat(BaseModel):
     diffstat: str
 
 
-class StaleWorkspaceError(CliError):
-    """Raised when `jj` refuses to run because the current workspace is stale."""
-
-
 class RenderableCommit(Protocol):
     """Change-like value that can be rendered by commit ID."""
 
@@ -1116,7 +1112,7 @@ class JjClient:
         if completed.returncode not in allowed_returncodes:
             message = completed.stderr.strip() or completed.stdout.strip() or "unknown error"
             if detect_stale_workspace and "The working copy is stale" in message:
-                raise StaleWorkspaceError(
+                raise CliError(
                     "The current workspace is stale.",
                     hint=t"Run {ui.cmd('jj workspace update-stale')} and retry.",
                 )

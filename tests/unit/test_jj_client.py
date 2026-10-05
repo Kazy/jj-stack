@@ -22,7 +22,6 @@ from jj_stack.jj.client import (
     JjClient,
     JjCommandError,
     PRRefUpdate,
-    StaleWorkspaceError,
 )
 from jj_stack.models.stack import LocalCommit
 from jj_stack.models.tracking import PRIdentity, SubmittedBaseline, TrackedPR, TrackingState
@@ -82,7 +81,7 @@ def test_membership_query_preserves_stale_workspace_guidance(
 
     monkeypatch.setattr(subprocess, "run", run)
 
-    with pytest.raises(StaleWorkspaceError, match="workspace is stale") as excinfo:
+    with pytest.raises(CliError, match="workspace is stale") as excinfo:
         JjClient(Path("/repo")).query_commits_with_membership(
             "trunk()",
             membership_revsets=("trunk()",),
