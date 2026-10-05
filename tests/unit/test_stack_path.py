@@ -142,7 +142,6 @@ def test_repo_paths_inventory_an_ordinary_shared_prefix() -> None:
                 {CommitId("shared"), CommitId("left"), CommitId("right")}
             ),
             current_tracked_commit_id=None,
-            trunk_first_parent_ids=frozenset({CommitId("trunk")}),
             commits=(right, trunk, shared, left),
             tracked_change_ids=frozenset({ChangeId("left-change"), ChangeId("right-change")}),
             trunk=trunk,

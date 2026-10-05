@@ -45,7 +45,7 @@ def observe_repo_paths(
         jj_client=jj_client,
         state=state,
         revset=f"trunk() | ancestors({candidates}, 2) | @",
-        membership_revsets=("trunk()", candidates, TRUNK_PATH),
+        membership_revsets=("trunk()", candidates),
     ).rows
     trunks = tuple(commit for commit, flags in rows if flags[0])
     trunk = require_usable_trunk(trunks)
@@ -69,9 +69,6 @@ def observe_repo_paths(
                 commit.commit_id for commit, flags in rows if flags[1]
             ),
             current_tracked_commit_id=current_tracked_commit_id,
-            trunk_first_parent_ids=frozenset(
-                commit.commit_id for commit, flags in rows if flags[2]
-            ),
             commits=tuple(commit for commit, _flags in rows),
             tracked_change_ids=frozenset(state.prs),
             trunk=trunk,

@@ -47,7 +47,6 @@ class RepoPathObservation:
 
     candidate_commit_ids: frozenset[CommitId]
     current_tracked_commit_id: CommitId | None
-    trunk_first_parent_ids: frozenset[CommitId]
     commits: tuple[LocalCommit, ...]
     tracked_change_ids: frozenset[ChangeId]
     trunk: LocalCommit
