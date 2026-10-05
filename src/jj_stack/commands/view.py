@@ -233,7 +233,7 @@ def _prepare_status_selector(
 ) -> tuple[PreparedLocalStack, tuple[ui.Message, ...]]:
     if selector.kind == "pr":
         resolved_revset, note = resolve_linked_change_for_pr(
-            jj_client=context.jj_client,
+            context=context,
             pr_reference=selector.value,
             revset=None,
         )

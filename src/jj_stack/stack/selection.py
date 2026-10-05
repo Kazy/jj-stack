@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import jj_stack.ui as ui
+from jj_stack.bootstrap import CommandContext
 from jj_stack.errors import AmbiguousSelectionError, CliError, UsageError
 from jj_stack.formatting import format_pr_label
 from jj_stack.github import resolution
@@ -13,12 +14,11 @@ from jj_stack.github.pr_refs import (
 from jj_stack.github.resolution import GithubRepoAddress, select_submit_remote
 from jj_stack.identifiers import ChangeId
 from jj_stack.jj.client import JjClient
-from jj_stack.state.store import TrackingStore
 
 
 def resolve_linked_change_for_pr(
     *,
-    jj_client: JjClient,
+    context: CommandContext,
     pr_reference: str,
     revset: str | None,
 ) -> tuple[ChangeId, ui.Message]:
@@ -30,11 +30,11 @@ def resolve_linked_change_for_pr(
         )
 
     pr_number, repo = resolve_pr_reference(
-        jj_client=jj_client,
+        jj_client=context.jj_client,
         pr_reference=pr_reference,
     )
     pr_label = format_pr_label(pr_number, repo=repo)
-    state = TrackingStore.for_repo(jj_client.repo_root).load()
+    state = context.state_store.load()
     matching_change_ids = [
         change_id
         for change_id, tracked in state.prs.items()

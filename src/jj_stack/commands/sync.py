@@ -130,7 +130,7 @@ async def _sync_async(
         containing_change_id = None
         if pr is not None:
             containing_change_id, note = resolve_linked_change_for_pr(
-                jj_client=context.jj_client, pr_reference=pr, revset=None
+                context=context, pr_reference=pr, revset=None
             )
             console.note(note)
         try:

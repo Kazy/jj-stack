@@ -247,7 +247,7 @@ def _resolve_merge_target(
 ) -> tuple[str | None, ChangeId | None]:
     if pr is not None:
         resolved_revset, note = resolve_linked_change_for_pr(
-            jj_client=context.jj_client,
+            context=context,
             pr_reference=pr,
             revset=revset,
         )

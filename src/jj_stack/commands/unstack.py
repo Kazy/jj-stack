@@ -267,7 +267,7 @@ def _resolve_local_stack(
 ) -> tuple[TrackingState, LocalStack]:
     if pr is not None:
         revset, note = resolve_linked_change_for_pr(
-            jj_client=context.jj_client,
+            context=context,
             pr_reference=pr,
             revset=revset,
         )
