@@ -45,7 +45,6 @@ class StackStatusChange:
     """One local change with its classified pull request state."""
 
     change: LocalCommit
-    tracked: TrackedPR | None
     state: ChangeState
 
     @property
@@ -61,8 +60,12 @@ class StackStatusChange:
         return self.change.subject
 
     @property
+    def tracked(self) -> TrackedPR | None:
+        return self.state.tracked
+
+    @property
     def branch(self) -> str | None:
-        return self.tracked.pr_identity.head_ref if self.tracked is not None else None
+        return self.state.branch
 
     @property
     def pr(self) -> GithubPR | None:
@@ -141,11 +144,7 @@ def build_status_result(
             observation = replace(
                 observation, pr=lookup.pr, open_prs_on_branch=lookup.open_prs_on_branch
             )
-        changes.append(
-            StackStatusChange(
-                change=change, tracked=observation.tracked, state=classify(observation)
-            )
-        )
+        changes.append(StackStatusChange(change=change, state=classify(observation)))
     return StatusResult(
         github_error=github_error,
         github_repo=github_repo,

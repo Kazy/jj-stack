@@ -92,7 +92,7 @@ def _status_change(
             UNOBSERVED if isinstance(pr, Unobserved) else (*open_prs, *competitors)
         ),
     )
-    return StackStatusChange(change=change, tracked=tracked, state=classify(observation))
+    return StackStatusChange(change=change, state=classify(observation))
 
 
 def _render_lines(*lines: ui_module.Renderable) -> tuple[str, ...]:
