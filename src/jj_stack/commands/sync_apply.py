@@ -185,12 +185,7 @@ def _apply_local_convergence(
             branch=top.candidate.pr_identity.head_ref,
             expected_target=destination,
             expected_chain=tuple(
-                (
-                    item.candidate.pr_identity.head_ref,
-                    item.pr.head.sha,
-                    (None, item.change_id),
-                )
-                for item in rewritten
+                (item.pr.head.sha, (None, item.change_id)) for item in rewritten
             ),
             base_descends_from=plan.merge_result_commit_id,
             base_ancestor_of=trunk_commit_id,
@@ -281,14 +276,7 @@ def _apply_github_stack_rebase(
         remote=remote_name,
         branch=top.candidate.pr_identity.head_ref,
         expected_target=top.pr.head.sha,
-        expected_chain=tuple(
-            (
-                item.candidate.pr_identity.head_ref,
-                item.pr.head.sha,
-                (None, item.change_id),
-            )
-            for item in adopted
-        ),
+        expected_chain=tuple((item.pr.head.sha, (None, item.change_id)) for item in adopted),
     ):
         desired_by_change, operation_id = _verified_local_rebase(
             context=context,

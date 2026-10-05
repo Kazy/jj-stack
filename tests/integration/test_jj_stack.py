@@ -244,7 +244,6 @@ def test_visible_pr_bookmark_does_not_block_broad_operations(
             remote="origin",
             branch=branch,
             expected_target=commit_id,
-            expected_change_id=change_id,
         ) as imported:
             assert imported.commit_id == commit_id
 
@@ -353,7 +352,6 @@ def test_direct_git_pr_branch_ref_operations_preserve_local_refs(
         remote="origin",
         branch=branch,
         expected_target=old_commit,
-        expected_change_id=old_change_id,
     ) as imported:
         assert imported.commit_id == old_commit
         assert imported.change_id == old_change_id

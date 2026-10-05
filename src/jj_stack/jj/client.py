@@ -682,8 +682,7 @@ class JjClient:
         remote: str,
         branch: str,
         expected_target: CommitId,
-        expected_change_id: ChangeId | None = None,
-        expected_chain: Sequence[tuple[str, CommitId, ExpectedGitChangeId]] = (),
+        expected_chain: Sequence[tuple[CommitId, ExpectedGitChangeId]] = (),
         base_descends_from: CommitId | None = None,
         base_ancestor_of: CommitId | None = None,
     ) -> Iterator[LocalCommit]:
@@ -697,16 +696,6 @@ class JjClient:
         """
 
         ref = f"refs/heads/{branch}"
-        chain = tuple(expected_chain)
-        if chain and (
-            chain[-1][:2] != (branch, expected_target)
-            or len({item[0] for item in chain}) != len(chain)
-            or (
-                expected_change_id is not None
-                and not _expected_git_change_id_matches(chain[-1][2], expected_change_id)
-            )
-        ):
-            raise ValueError("invalid expected remote PR branch chain")
         self.clear_pr_branch_temp_artifacts()
         try:
             configured_remote = self._git_remote(remote)
@@ -724,9 +713,9 @@ class JjClient:
                     t"Remote branch {ui.bookmark(branch)} changed while it was being imported.",
                     condition="remote_branch_moved",
                 )
-            if chain:
+            if expected_chain:
                 expected_parent: CommitId | None = None
-                for _chain_branch, target, expected_git_change_id in chain:
+                for target, expected_git_change_id in expected_chain:
                     actual = self._read_git_commit_metadata(target)
                     if (
                         not _expected_git_change_id_matches(
@@ -752,12 +741,6 @@ class JjClient:
             if change.commit_id != expected_target:
                 raise JjCommandError(
                     t"{ui.cmd('jj git import')} did not import the expected PR branch commit."
-                )
-            if expected_change_id is not None and change.change_id != expected_change_id:
-                raise CliError(
-                    t"Remote branch {ui.bookmark(branch)} resolves to change "
-                    t"{ui.change_id(change.change_id)}, not the expected change "
-                    t"{ui.change_id(expected_change_id)}."
                 )
             yield change
         finally:
