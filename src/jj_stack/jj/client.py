@@ -616,13 +616,6 @@ class JjClient:
                 refspec,
             )
         )
-        updated = self._git_fetch_refspecs(remote)
-        retained_default = bool(configured) or updated.count(default_fetch_refspec) == 1
-        if updated.count(refspec) != 1 or not retained_default:
-            raise JjCommandError(
-                t"Git fetch configuration for remote {ui.bookmark(remote)} did not retain "
-                t"the required positive and negative refspecs."
-            )
         return result
 
     def visible_pr_bookmark_targets(
