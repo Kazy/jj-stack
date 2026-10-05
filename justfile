@@ -45,6 +45,10 @@ complexity:
 dead-code *paths='src tests tools':
     uv run vulture {{paths}}
 
+# Report wide signatures and parameters forwarded through calls unchanged.
+api-width *paths='src':
+    uv run tools/report_api_width.py {{paths}}
+
 # Type-check edited copies to find unread fields, unused defaults, and unneeded `| None`.
 dead-code-probe *paths='src':
     uv run tools/probe_dead_code.py {{paths}}

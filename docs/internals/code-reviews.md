@@ -71,6 +71,11 @@ candidates to check, not proof. Removing dead code can leave more behind, so rep
 report nothing new. Add names that frameworks call to `[tool.vulture]` in `pyproject.toml`; the
 probe skips them too.
 
+Flag wide signatures and parameters that functions only pass along. A value forwarded unchanged
+through several calls belongs in the object that already carries the run's other fixed values,
+and parameters that always travel together belong in one value. `just api-width` lists the
+widest signatures, forwarding chains, recurring parameter groups, and arguments that never vary.
+
 Use precise types in domain APIs. Dynamic types and casts can be necessary at argument parsing,
 async protocols, or untrusted-JSON boundaries; narrow them there. Flag `Any`, `object`, `cast`, or
 `getattr` when they hide a missing model or spread into domain logic.
