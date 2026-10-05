@@ -24,12 +24,10 @@ def short_commit_id(commit_id: str) -> str:
     return commit_id[:SHORT_COMMIT_ID_LENGTH]
 
 
-def is_change_id_prefix(value: str | None) -> bool:
+def is_change_id_prefix(value: str) -> bool:
     """Return whether a bare selector has jj change-ID syntax."""
 
-    return (
-        value is not None and bool(value) and all("k" <= character <= "z" for character in value)
-    )
+    return bool(value) and all("k" <= character <= "z" for character in value)
 
 
 def is_full_change_id(value: str) -> bool:
