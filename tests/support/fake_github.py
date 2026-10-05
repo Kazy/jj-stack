@@ -229,12 +229,6 @@ class FakeGithubIssueComment:
     body: str
     id: int
 
-    def to_payload(self) -> dict[str, object]:
-        return {
-            "body": self.body,
-            "id": self.id,
-        }
-
     def to_graphql_payload(self) -> dict[str, object]:
         return {
             "body": self.body,
@@ -1038,7 +1032,7 @@ class FakeGithubRepo:
         *,
         body: str,
         issue_number: int,
-    ) -> FakeGithubIssueComment:
+    ) -> None:
         self._require_issue_number(issue_number)
         comment = FakeGithubIssueComment(
             body=body,
@@ -1046,7 +1040,6 @@ class FakeGithubRepo:
         )
         self.next_issue_comment_id += 1
         self.issue_comments.setdefault(issue_number, []).append(comment)
-        return comment
 
     def update_issue_comment(
         self,
@@ -1430,14 +1423,14 @@ def _register_pr_routes(app: FastAPI, fake_state: FakeGithubState) -> None:
         repo_name: str,
         issue_number: int,
         payload: Annotated[dict[str, object], Body(...)],
-    ) -> list[dict[str, object]]:
+    ) -> dict[str, object]:
         repo = _get_repo(fake_state, owner, repo_name)
         pr = repo.prs.get(issue_number)
         if pr is None:
             raise HTTPException(status_code=404, detail="Not Found")
         # Real GitHub adds to the issue's existing labels and ignores duplicates.
         pr.labels = list(dict.fromkeys((*pr.labels, *_requested_names(payload, "labels"))))
-        return [{"name": label} for label in pr.labels]
+        return {}
 
     @app.get("/repos/{owner}/{repo_name}/pulls/{pr_number}/reviews")
     async def list_pr_reviews(
@@ -1463,11 +1456,11 @@ def _register_issue_comment_routes(app: FastAPI, fake_state: FakeGithubState) ->
         payload: Annotated[dict[str, object], Body(...)],
     ) -> dict[str, object]:
         repo = _get_repo(fake_state, owner, repo_name)
-        comment = repo.create_issue_comment(
+        repo.create_issue_comment(
             body=_require_string(payload, "body"),
             issue_number=issue_number,
         )
-        return comment.to_payload()
+        return {}
 
     @app.patch("/repos/{owner}/{repo_name}/issues/comments/{comment_id}")
     async def update_issue_comment(
@@ -1483,7 +1476,7 @@ def _register_issue_comment_routes(app: FastAPI, fake_state: FakeGithubState) ->
         )
         if comment is None:
             raise HTTPException(status_code=404, detail="Not Found")
-        return comment.to_payload()
+        return {}
 
     @app.delete(
         "/repos/{owner}/{repo_name}/issues/comments/{comment_id}",
