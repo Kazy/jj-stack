@@ -755,15 +755,13 @@ class StackMachine(RuleBasedStateMachine):
             if record.pr_identity.pr_number == number and label not in excluding
         )
 
-    def run_queue(self, failing: int | None) -> tuple[str, ...]:
+    def run_queue(self, failing: int | None) -> None:
         """Let the fake queue drain, failing one entry's checks, and land what merged."""
 
         self.fake.queue_failures = set() if failing is None else {failing}
         unmerged = self.unmerged_numbers()
         self.fake.run_merge_queue()
-        landed = self.landed_since(unmerged)
-        self.land(landed)
-        return landed
+        self.land(self.landed_since(unmerged))
 
     def queue_scope(self) -> tuple[str, ...]:
         """PRs the queue can merge or rewrite, including unqueued members above them."""
