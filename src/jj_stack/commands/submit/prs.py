@@ -167,15 +167,14 @@ def _reviewers_to_re_request(
             continue
         latest_reviews_by_user[reviewer.login] = review
 
-    selected_reviews = sorted(
+    selected = sorted(
         (
-            review
-            for review in latest_reviews_by_user.values()
+            (review.id, login)
+            for login, review in latest_reviews_by_user.items()
             if review.state.upper() in {"APPROVED", "CHANGES_REQUESTED"}
         ),
-        key=lambda item: item.id,
     )
-    return [review.user.login for review in selected_reviews if review.user is not None]
+    return [login for _, login in selected]
 
 
 async def _sync_pr_metadata(
