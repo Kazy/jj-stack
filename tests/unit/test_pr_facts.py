@@ -28,7 +28,6 @@ def test_failed_observation_finishes_reads_and_local_worker_before_returning(
     release_local = threading.Event()
     local_finished = threading.Event()
     jj_client = Mock(spec=JjClient)
-    jj_client.list_git_remotes.return_value = []
     context = CommandContext(
         config=AppConfig(),
         jj_client=jj_client,

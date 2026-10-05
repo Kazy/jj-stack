@@ -46,8 +46,6 @@ async def observe_prs(
 ) -> RepoFacts:
     """Read PR state, optionally skipping branch target lookups."""
 
-    remotes = context.jj_client.list_git_remotes()
-    remote = next((item for item in remotes if item.name == remote_name), None)
     tracked_prs = {
         change_id: tracked
         for change_id in dict.fromkeys(change_ids)
@@ -71,7 +69,7 @@ async def observe_prs(
         open_heads_request = github_client.get_open_prs_by_head_refs(head_refs=head_refs)
     else:
         open_heads_request = asyncio.sleep(0, result={})
-    if include_remote_targets and remote is not None and head_refs:
+    if include_remote_targets and head_refs:
         remote_targets_request = github_client.get_branch_targets(branches=head_refs)
     else:
         remote_targets_request = asyncio.sleep(0, result={})
@@ -110,7 +108,7 @@ async def observe_prs(
         change_id: TrackedPRObservation(
             change_id=change_id,
             branch=identity.head_ref,
-            remote_name=remote.name if remote is not None else None,
+            remote_name=remote_name,
             tracked=tracked,
             open_prs_on_branch=(
                 by_head.get(identity.head_ref, ()) if include_open_head_prs else UNOBSERVED
@@ -118,9 +116,7 @@ async def observe_prs(
             local=matches,
             pr=numbered.get(identity.pr_number),
             remote_target=(
-                remote_targets.get(identity.head_ref)
-                if include_remote_targets and remote is not None
-                else UNOBSERVED
+                remote_targets.get(identity.head_ref) if include_remote_targets else UNOBSERVED
             ),
         )
         for change_id, tracked in tracked_prs.items()

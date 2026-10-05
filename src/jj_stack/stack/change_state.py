@@ -73,6 +73,7 @@ class TrackedPRObservation(ChangeObservation):
     """A saved PR looked up successfully by number; None means GitHub reports it absent."""
 
     tracked: TrackedPR
+    remote_name: str
     pr: GithubPR | None
     open_prs_on_branch: tuple[GithubPR, ...] | Unobserved = UNOBSERVED
 
