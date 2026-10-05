@@ -1698,7 +1698,6 @@ def _pr_fields_fragment() -> str:
           mergeCommit {
             oid
           }
-          mergedAt
           reviewDecision
           mergeStateStatus
           statusCheckRollup {

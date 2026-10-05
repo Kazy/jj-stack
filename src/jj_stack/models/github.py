@@ -165,7 +165,6 @@ class GithubPR(BaseModel):
     approvals: int | None = None
     # How many commits the landing branch has that this PR's head lacks, when looked up.
     behind: int | None = None
-    merged_at: str | None = Field(default=None, validation_alias="mergedAt")
     node_id: str = Field(validation_alias="id")
     number: int
     review_decision: ReviewDecision | None = Field(

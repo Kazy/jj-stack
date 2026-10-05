@@ -62,7 +62,7 @@ def test_fake_rejects_retargets_and_reopens_that_github_cannot_apply(tmp_path: P
             assert (await client.patch(f"{path}/issues/1", json={"state": "open"})).is_success
             update_remote_ref(fake, branch="main", target=head)
             observed = await github.get_pr(pr_number=1)
-            assert observed.merged_at is not None
+            assert observed.state == "merged"
             assert observed.merge_commit_sha == head
             response = await client.patch(f"{path}/issues/1", json={"state": "open"})
             assert response.status_code == 422

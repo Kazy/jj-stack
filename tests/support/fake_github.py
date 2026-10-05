@@ -132,7 +132,6 @@ class FakeGithubPR:
             "mergeCommit": (
                 None if self.merge_commit_sha is None else {"oid": self.merge_commit_sha}
             ),
-            "mergedAt": self.merged_at,
             "mergeStateStatus": self.merge_state_status,
             "mergeable": "MERGEABLE",
             "number": self.number,
