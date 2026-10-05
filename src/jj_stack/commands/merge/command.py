@@ -77,7 +77,7 @@ class PreparedMerge:
 
     dry_run: bool
     context: CommandContext
-    merge_method: str | None
+    merge_method: MergeMethod | None
     stack: LocalStack
     state: TrackingState
     target: GithubTarget
@@ -95,7 +95,7 @@ def merge(
     cli_args: JjCliArgs,
     debug: bool,
     dry_run: bool,
-    merge_method: str | None,
+    merge_method: MergeMethod | None,
     no_wait: bool,
     pr: str | None,
     repo: Path | None,
@@ -122,7 +122,7 @@ async def _run_merge(
     *,
     context: CommandContext,
     dry_run: bool,
-    merge_method: str | None,
+    merge_method: MergeMethod | None,
     no_wait: bool,
     pr: str | None,
     revset: str | None,
@@ -260,7 +260,7 @@ def _prepare_merge(
     *,
     context: CommandContext,
     dry_run: bool,
-    merge_method: str | None,
+    merge_method: MergeMethod | None,
     revset: str | None,
     target_change_id: ChangeId | None,
 ) -> PreparedMerge:
@@ -326,11 +326,9 @@ async def _request_merge_async(
                 t"The base branch {ui.bookmark(trunk_branch)} uses a merge queue; ignoring "
                 t"{ui.cmd('--method')}."
             )
-        merge_action = "merge_queue"
-        resolved_merge_method = None
+        method = None
     else:
-        merge_action = "direct_merge"
-        resolved_merge_method = _resolve_merge_method(
+        method = _resolve_merge_method(
             changes=stack.changes,
             configured=prepared_merge.context.config.merge_method,
             merge_method=prepared_merge.merge_method,
@@ -354,8 +352,7 @@ async def _request_merge_async(
     if prepared_merge.dry_run:
         action = (
             async_merge.action(
-                merge_action=merge_action,
-                method=resolved_merge_method,
+                method=method,
                 repo=execution.repo,
                 trunk_branch=trunk_branch,
             )
@@ -366,8 +363,7 @@ async def _request_merge_async(
     return await execute_async_merge(
         execution=execution,
         github=github_client,
-        merge_action=merge_action,
-        merge_method=resolved_merge_method,
+        method=method,
         merge=async_merge,
     ), github_repo_state
 
@@ -376,12 +372,12 @@ def _resolve_merge_method(
     *,
     changes: Sequence[LocalCommit],
     configured: MergeMethod | None,
-    merge_method: str | None,
+    merge_method: MergeMethod | None,
     repo_state: GithubRepo,
-) -> str:
+) -> MergeMethod:
     """Honor explicit choices; require one for signed stacks with several allowed methods."""
 
-    settings = {
+    settings: dict[MergeMethod, bool | None] = {
         "rebase": repo_state.allow_rebase_merge,
         "squash": repo_state.allow_squash_merge,
         "merge": repo_state.allow_merge_commit,

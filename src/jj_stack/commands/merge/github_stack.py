@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from typing import Literal
 
 import jj_stack.ui as ui
+from jj_stack.config import MergeMethod
 from jj_stack.errors import CliError
 from jj_stack.formatting import format_pr_label, format_pr_number
 from jj_stack.github.client import GithubClient, GithubClientError
@@ -33,9 +35,8 @@ class AsyncMergePlan:
     def action(
         self,
         *,
-        outcome: str = "planned",
-        merge_action: str,
-        method: str | None,
+        outcome: Literal["planned", "enqueued", "failed", "merged", "pending"] = "planned",
+        method: MergeMethod | None,
         repo: GithubRepoAddress,
         trunk_branch: str,
     ) -> MergeAction:
@@ -48,15 +49,13 @@ class AsyncMergePlan:
             body = t"merged {prs} into {ui.bookmark(trunk_branch)} through "
         elif outcome == "enqueued":
             body = t"queued {prs} for {ui.bookmark(trunk_branch)} through "
-        elif merge_action == "merge_queue":
+        elif method is None:
             verb = "asked GitHub to add" if outcome == "pending" else "add"
             body = t"{verb} {prs} to the merge queue for {ui.bookmark(trunk_branch)} through "
         elif outcome == "pending":
             body = t"requested merge of {prs} into {ui.bookmark(trunk_branch)} through "
         else:
-            body = (
-                t"merge {prs} into {ui.bookmark(trunk_branch)} via {ui.cmd(method or '')} up to "
-            )
+            body = t"merge {prs} into {ui.bookmark(trunk_branch)} via {ui.cmd(method)} up to "
         return MergeAction(
             kind="GitHub merge request",
             body=(
@@ -74,8 +73,7 @@ class PendingMerge:
 
     execution: MergeExecutionInputs
     merge: AsyncMergePlan
-    merge_action: str
-    merge_method: str | None
+    method: MergeMethod | None  # None means the merge queue
     request: GithubStackMerge
 
     def result(self) -> MergeResult:
@@ -85,21 +83,14 @@ class PendingMerge:
             self.execution,
             self.merge,
             result=self.request,
-            merge_action=self.merge_action,
-            merge_method=self.merge_method,
+            method=self.method,
         )
 
     async def wait(self, github: GithubClient) -> MergeResult:
         """Wait for GitHub to finish the request, then report its outcome."""
 
         terminal = await wait_for_merge(github, self.request, self.merge.planned, self.execution)
-        return _terminal_result(
-            self.execution,
-            self.merge,
-            terminal,
-            merge_action=self.merge_action,
-            merge_method=self.merge_method,
-        )
+        return _terminal_result(self.execution, self.merge, terminal, method=self.method)
 
 
 def build_async_merge_plan(
@@ -133,8 +124,7 @@ async def execute_async_merge(
     *,
     execution: MergeExecutionInputs,
     github: GithubClient,
-    merge_action: str,
-    merge_method: str | None,
+    method: MergeMethod | None,
     merge: AsyncMergePlan,
 ) -> MergeResult | PendingMerge:
     """Ask GitHub to merge; report the outcome, or the request GitHub is still working on."""
@@ -156,8 +146,7 @@ async def execute_async_merge(
     try:
         submission = await github.submit_stack_merge(
             expected_head_sha=merge.target.commit_id,
-            merge_action=merge_action,
-            merge_method=merge_method,
+            method=method,
             pr_number=merge.target.identity.pr_number,
         )
     except GithubClientError as error:
@@ -176,8 +165,8 @@ async def execute_async_merge(
     details = submission.result.details
     if submission.already_pending and not (
         details.expected_head_sha == merge.target.commit_id
-        and details.merge_action == merge_action
-        and (merge_action == "merge_queue" or details.merge_method == merge_method)
+        and details.merge_action == ("merge_queue" if method is None else "direct_merge")
+        and (method is None or details.merge_method == method)
     ):
         return _blocked_result(
             execution,
@@ -190,13 +179,10 @@ async def execute_async_merge(
         return PendingMerge(
             execution=execution,
             merge=merge,
-            merge_action=merge_action,
-            merge_method=merge_method,
+            method=method,
             request=request,
         )
-    return _terminal_result(
-        execution, merge, request, merge_action=merge_action, merge_method=merge_method
-    )
+    return _terminal_result(execution, merge, request, method=method)
 
 
 def _terminal_result(
@@ -204,8 +190,7 @@ def _terminal_result(
     merge: AsyncMergePlan,
     terminal: GithubStackMerge,
     *,
-    merge_action: str,
-    merge_method: str | None,
+    method: MergeMethod | None,
 ) -> MergeResult:
     if terminal.status == "failed":
         return _blocked_result(
@@ -220,13 +205,7 @@ def _terminal_result(
             hint=t"Check the PRs on GitHub, then run {ui.cmd('jj-stack sync')} for this stack "
             t"to apply any completed merges.",
         )
-    return _accepted_result(
-        execution,
-        merge,
-        result=terminal,
-        merge_action=merge_action,
-        merge_method=merge_method,
-    )
+    return _accepted_result(execution, merge, result=terminal, method=method)
 
 
 def _rejection_reason(execution: MergeExecutionInputs, message: str | None) -> Message:
@@ -272,14 +251,12 @@ def _accepted_result(
     merge: AsyncMergePlan,
     *,
     result: GithubStackMerge,
-    merge_action: str,
-    merge_method: str | None,
+    method: MergeMethod | None,
 ) -> MergeResult:
     action = replace(
         merge.action(
             outcome=result.status,
-            merge_action=merge_action,
-            method=merge_method,
+            method=method,
             repo=execution.repo,
             trunk_branch=execution.trunk_branch,
         ),

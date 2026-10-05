@@ -512,14 +512,12 @@ def test_stack_merge_resumes_a_matching_request_after_a_lost_response(
             self,
             *,
             expected_head_sha,
-            merge_action,
-            merge_method,
+            method,
             pr_number,
         ):
             await super().submit_stack_merge(
                 expected_head_sha=expected_head_sha,
-                merge_action=merge_action,
-                merge_method=merge_method,
+                method=method,
                 pr_number=pr_number,
             )
             raise GithubClientError("lost submit response")
@@ -717,16 +715,14 @@ def test_merge_expected_head_guard_rejects_a_race(
             self,
             *,
             expected_head_sha,
-            merge_action,
+            method,
             pr_number,
-            merge_method,
         ):
             update_remote_ref(fake_repo, branch=bookmark, target=trunk_before)
             return await super().submit_stack_merge(
                 expected_head_sha=expected_head_sha,
-                merge_action=merge_action,
+                method=method,
                 pr_number=pr_number,
-                merge_method=merge_method,
             )
 
     patch_github_client_builders(

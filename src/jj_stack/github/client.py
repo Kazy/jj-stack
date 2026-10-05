@@ -18,6 +18,7 @@ import httpx2
 from pydantic import AliasPath, BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from jj_stack.concurrency import DEFAULT_BOUNDED_CONCURRENCY, wait_for_read_tasks
+from jj_stack.config import MergeMethod
 from jj_stack.errors import EXIT_GITHUB, SummarizedError
 from jj_stack.github.auth import github_token
 from jj_stack.github.resolution import GithubRepoAddress
@@ -969,16 +970,14 @@ class GithubClient:
         self,
         *,
         expected_head_sha: CommitId,
-        merge_action: str,
-        merge_method: str | None,
+        method: MergeMethod | None,
         pr_number: int,
     ) -> GithubStackMergeSubmission:
-        body: dict[str, object] = {
-            "merge_action": merge_action,
-            "sha": expected_head_sha,
-        }
-        if merge_method is not None:
-            body["merge_method"] = merge_method
+        """Merge directly with method, or through the merge queue when it is None."""
+
+        body: dict[str, object] = {"merge_action": "merge_queue", "sha": expected_head_sha}
+        if method is not None:
+            body |= {"merge_action": "direct_merge", "merge_method": method}
         response = await self._request(
             "PUT",
             f"{self._repo_path}/pulls/{pr_number}/merge-async",
