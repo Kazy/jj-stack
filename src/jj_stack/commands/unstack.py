@@ -25,7 +25,6 @@ from jj_stack.github.error_messages import require_github_target
 from jj_stack.github.resolution import resolve_github_target
 from jj_stack.identifiers import ChangeId, short_change_id
 from jj_stack.models.github import GithubStack
-from jj_stack.models.stack import LocalStack
 from jj_stack.models.tracking import TrackingState
 from jj_stack.stack.change_state import classify, stop_error
 from jj_stack.stack.github_stack_safety import (
@@ -33,7 +32,7 @@ from jj_stack.stack.github_stack_safety import (
     selected_github_stack,
 )
 from jj_stack.stack.pr_facts import observe_github_stacks, observe_prs
-from jj_stack.stack.selected import select_stack_path
+from jj_stack.stack.preparation import PreparedLocalStack, prepare_local_stack
 from jj_stack.stack.selection import (
     resolve_linked_change_for_pr,
 )
@@ -85,40 +84,30 @@ def unstack(
         command=command,
         mutating=not dry_run,
     ):
+        if stack is not None:
+            return asyncio.run(_run_github_unstack(context, dry_run=dry_run, target=stack))
+        selected = _resolve_local_stack(context=context, pr=pr, revset=revset)
         if local:
-            result = _run_local_unstack(
-                context=context,
-                dry_run=dry_run,
-                pr=pr,
-                revset=revset,
-            )
-            _print_local_unstack_result(result)
+            _print_local_unstack_result(_run_local_unstack(context, dry_run, selected))
             return 0
-        return asyncio.run(
-            _run_github_unstack(
-                context=context,
-                dry_run=dry_run,
-                pr=pr,
-                revset=revset,
-                stack_number=stack,
-            )
-        )
+        return asyncio.run(_run_github_unstack(context, dry_run=dry_run, target=selected))
 
 
 async def _run_github_unstack(
-    *,
     context: CommandContext,
+    *,
     dry_run: bool,
-    pr: str | None,
-    revset: str | None,
-    stack_number: int | None,
+    target: int | PreparedLocalStack,
 ) -> int:
+    """Remove GitHub stack number `target`, or the one holding the selected local stack."""
+
     github_target = require_github_target(
         resolve_github_target(context.jj_client.list_git_remotes())
     )
 
     async with context.open_github_client(repo=github_target.repo) as github_client:
-        if stack_number is not None:
+        if isinstance(target, int):
+            stack_number = target
             github_stack = await _get_github_stack(
                 github_client=github_client,
                 stack_number=stack_number,
@@ -133,11 +122,10 @@ async def _run_github_unstack(
                 )
                 return 0
         else:
-            state, change_ids, pr_numbers = _resolve_local_github_stack(
-                context=context,
-                pr=pr,
-                revset=revset,
-            )
+            state = target.state
+            changes = target.stack.changes
+            change_ids = tuple(c.change_id for c in changes if c.change_id in state.prs)
+            pr_numbers = tuple(state.prs[c].pr_identity.pr_number for c in change_ids)
             if not pr_numbers:
                 console.output("No saved pull request links were found for the selected stack.")
                 return 0
@@ -180,25 +168,6 @@ async def _get_github_stack(
         raise CliError(t"Could not inspect GitHub stack #{stack_number}.") from error
 
 
-def _resolve_local_github_stack(
-    *,
-    context: CommandContext,
-    pr: str | None,
-    revset: str | None,
-) -> tuple[TrackingState, tuple[ChangeId, ...], tuple[int, ...]]:
-    state, stack = _resolve_local_stack(context=context, pr=pr, revset=revset)
-
-    change_ids: list[ChangeId] = []
-    pr_numbers: list[int] = []
-    for change in stack.changes:
-        tracked_pr = state.prs.get(change.change_id)
-        if tracked_pr is None:
-            continue
-        change_ids.append(change.change_id)
-        pr_numbers.append(tracked_pr.pr_identity.pr_number)
-    return state, tuple(change_ids), tuple(pr_numbers)
-
-
 async def _check_selected_prs(
     *,
     change_ids: tuple[ChangeId, ...],
@@ -226,16 +195,13 @@ async def _check_selected_prs(
 
 
 def _run_local_unstack(
-    *,
     context: CommandContext,
     dry_run: bool,
-    pr: str | None,
-    revset: str | None,
+    selected: PreparedLocalStack,
 ) -> LocalUnstackResult:
-    state, stack = _resolve_local_stack(context=context, pr=pr, revset=revset)
     actions: list[LocalUnstackAction] = []
-    for change in stack.changes:
-        tracked_pr = state.prs.get(change.change_id)
+    for change in selected.stack.changes:
+        tracked_pr = selected.state.prs.get(change.change_id)
         if tracked_pr is None:
             continue
         actions.append(
@@ -256,7 +222,7 @@ def _resolve_local_stack(
     context: CommandContext,
     pr: str | None,
     revset: str | None,
-) -> tuple[TrackingState, LocalStack]:
+) -> PreparedLocalStack:
     if pr is not None:
         revset, note = resolve_linked_change_for_pr(
             context=context,
@@ -264,14 +230,10 @@ def _resolve_local_stack(
             revset=revset,
         )
         console.note(note)
-    state = context.state_store.load()
     with console.spinner(description="Inspecting jj stack"):
-        stack = select_stack_path(
-            jj_client=context.jj_client,
-            revset=revset,
-            state=state,
-        ).stack
-    return state, stack
+        return prepare_local_stack(
+            context=context, fetch_remote_state=False, revset=revset, containing_change_id=None
+        )
 
 
 def _print_local_unstack_result(result: LocalUnstackResult) -> None:
