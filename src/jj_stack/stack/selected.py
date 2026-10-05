@@ -139,11 +139,10 @@ def select_stack_path_containing_change(
     )
     selected_revset = containing_heads[0].change_id if len(containing_heads) == 1 else change_id
     return _project_rows(
-        candidate_commit_ids=frozenset(head.commit_id for head in containing_heads),
         rows=rows,
         selected_revset=selected_revset,
         select_mutable_copy=False,
-        selector_commits=tuple(row.commit for row in rows if row.is_selector),
+        selector_commits=containing_heads,
         use_default=False,
         inspection_mode=inspection_mode,
     )
@@ -257,7 +256,6 @@ def _observe_path_rows(
 
 def _project_rows(
     *,
-    candidate_commit_ids: frozenset[CommitId] | None = None,
     inspection_mode: bool,
     rows: tuple[_ObservedPathRow, ...],
     selected_revset: str,
@@ -268,12 +266,7 @@ def _project_rows(
     trunks = tuple(row.commit for row in rows if row.is_trunk)
     trunk = require_usable_trunk(trunks)
 
-    candidates = tuple(
-        commit
-        for commit in selector_commits
-        if candidate_commit_ids is None or commit.commit_id in candidate_commit_ids
-    )
-    if not candidates:
+    if not selector_commits:
         # A selector that lands on no visible candidate selects no stack, whether the change is
         # hidden or never existed, so it carries the stack-selection exit code.
         raise UnsupportedStackError(
@@ -282,7 +275,7 @@ def _project_rows(
         )
     current_working_copy = (
         next(
-            (commit for commit in candidates if commit.current_working_copy),
+            (commit for commit in selector_commits if commit.current_working_copy),
             None,
         )
         if use_default
@@ -320,7 +313,7 @@ def _project_rows(
             ),
             commits=tuple(row.commit for row in rows),
             selected_revset=selected_revset,
-            selector_commits=candidates,
+            selector_commits=selector_commits,
             select_mutable_copy=select_mutable_copy,
             trunk=trunk,
         )
