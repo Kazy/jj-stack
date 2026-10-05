@@ -53,9 +53,8 @@ def predict_prs_auto_closed_by_push(
         pr = plan.prepared.pr
         if pr is None or pr.state != "open":
             continue
-        head_after_push = push_targets.get(pr.head.ref)
-        if head_after_push is None:
-            continue
+        # The PR's head is the plan's own branch.
+        head_after_push = plan.prepared.change.commit_id
         base_after_push = push_targets.get(pr.base.ref, remote_targets.get(pr.base.ref))
         if base_after_push is None:
             continue
