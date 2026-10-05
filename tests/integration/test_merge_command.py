@@ -13,7 +13,6 @@ from jj_stack.state.store import TrackingStore
 
 from ..support.fake_github import (
     FakeGithubRepo,
-    FakeGithubState,
     _complete_stack_merge,
     create_app,
 )
@@ -257,7 +256,7 @@ def test_merge_queue_lookup_failure_stops_before_requesting_a_merge(
 ) -> None:
     repo, fake_repo = init_fake_github_repo_with_submitted_feature(tmp_path)
     config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
-    app = create_app(FakeGithubState.single_repo(fake_repo))
+    app = create_app(fake_repo)
 
     class QueueLookupFailureClient(GithubClient):
         async def base_branch_uses_merge_queue(self, *, branch):
@@ -505,7 +504,7 @@ def test_stack_merge_resumes_a_matching_request_after_a_lost_response(
     config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
     fake_repo.github_stacks = {7: (1, 2)}
     state_store = TrackingStore.for_repo(repo)
-    app = create_app(FakeGithubState.single_repo(fake_repo))
+    app = create_app(fake_repo)
 
     class LostResponseClient(GithubClient):
         async def submit_stack_merge(
@@ -708,7 +707,7 @@ def test_merge_expected_head_guard_rejects_a_race(
     bookmark = state_before.prs[change.change_id].pr_identity.head_ref
     trunk_before = read_remote_ref(fake_repo.git_dir, "main")
     fake_repo.auto_merge_reachable_heads = False
-    app = create_app(FakeGithubState.single_repo(fake_repo))
+    app = create_app(fake_repo)
 
     class HeadRaceClient(GithubClient):
         async def submit_stack_merge(

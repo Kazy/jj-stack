@@ -1068,19 +1068,8 @@ class FakeGithubRepo:
             raise HTTPException(status_code=404, detail="Not Found")
 
 
-@dataclass(slots=True, frozen=True)
-class FakeGithubState:
-    """Static state served by the fake GitHub app."""
-
-    repos: dict[tuple[str, str], FakeGithubRepo]
-
-    @classmethod
-    def single_repo(cls, repo: FakeGithubRepo) -> FakeGithubState:
-        return cls(repos={(repo.owner, repo.name): repo})
-
-
-def create_app(fake_state: FakeGithubState) -> FastAPI:
-    """Create a FastAPI app that serves the configured fake GitHub state."""
+def create_app(fake_repo: FakeGithubRepo) -> FastAPI:
+    """Create a FastAPI app that serves one fake GitHub repo."""
 
     app = FastAPI(docs_url=None, redoc_url=None, title="fake-github")
 
@@ -1097,31 +1086,28 @@ def create_app(fake_state: FakeGithubState) -> FastAPI:
             status_code=error.status_code,
         )
 
-    _register_repo_routes(app, fake_state)
-    _register_github_stack_routes(app, fake_state)
-    _register_graphql_routes(app, fake_state)
-    _register_pr_routes(app, fake_state)
-    _register_issue_comment_routes(app, fake_state)
+    _register_repo_routes(app, fake_repo)
+    _register_github_stack_routes(app, fake_repo)
+    _register_graphql_routes(app, fake_repo)
+    _register_pr_routes(app, fake_repo)
+    _register_issue_comment_routes(app, fake_repo)
     return app
 
 
-def _register_repo_routes(app: FastAPI, fake_state: FakeGithubState) -> None:
+def _register_repo_routes(app: FastAPI, fake_repo: FakeGithubRepo) -> None:
     """Register repo metadata routes on the fake GitHub app."""
 
     @app.get("/repos/{owner}/{repo_name}")
     async def get_repo(owner: str, repo_name: str) -> dict[str, object]:
-        repo = fake_state.repos.get((owner, repo_name))
-        if repo is None:
-            raise HTTPException(status_code=404, detail="Not Found")
-        return repo.to_payload()
+        return _get_repo(fake_repo, owner, repo_name).to_payload()
 
 
-def _register_github_stack_routes(app: FastAPI, fake_state: FakeGithubState) -> None:
+def _register_github_stack_routes(app: FastAPI, fake_repo: FakeGithubRepo) -> None:
     """Register the observed stack routes."""
 
     @app.get("/repos/{owner}/{repo_name}/stacks")
     async def list_stacks(owner: str, repo_name: str) -> list[dict[str, object]]:
-        repo = _get_repo(fake_state, owner, repo_name)
+        repo = _get_repo(fake_repo, owner, repo_name)
         return [
             _stack_payload(repo, number, members)
             for number, members in sorted(_github_stacks(repo).items())
@@ -1133,7 +1119,7 @@ def _register_github_stack_routes(app: FastAPI, fake_state: FakeGithubState) -> 
         repo_name: str,
         stack_number: int,
     ) -> dict[str, object]:
-        repo = _get_repo(fake_state, owner, repo_name)
+        repo = _get_repo(fake_repo, owner, repo_name)
         members = _github_stacks(repo).get(stack_number)
         if members is None:
             raise HTTPException(status_code=404, detail="Not Found")
@@ -1145,7 +1131,7 @@ def _register_github_stack_routes(app: FastAPI, fake_state: FakeGithubState) -> 
         repo_name: str,
         payload: Annotated[dict[str, object], Body(...)],
     ) -> dict[str, object]:
-        repo = _get_repo(fake_state, owner, repo_name)
+        repo = _get_repo(fake_repo, owner, repo_name)
         members = _require_int_list(payload, "pull_requests")
         if len(members) < 2:
             raise HTTPException(status_code=422, detail="A stack requires two pull requests.")
@@ -1184,7 +1170,7 @@ def _register_github_stack_routes(app: FastAPI, fake_state: FakeGithubState) -> 
         stack_number: int,
         payload: Annotated[dict[str, object], Body(...)],
     ) -> dict[str, object]:
-        repo = _get_repo(fake_state, owner, repo_name)
+        repo = _get_repo(fake_repo, owner, repo_name)
         stacks = _github_stacks(repo)
         existing = stacks.get(stack_number)
         added = _require_int_list(payload, "pull_requests")
@@ -1211,7 +1197,7 @@ def _register_github_stack_routes(app: FastAPI, fake_state: FakeGithubState) -> 
         response_model=None,
     )
     async def unstack(owner: str, repo_name: str, stack_number: int) -> Response:
-        repo = _get_repo(fake_state, owner, repo_name)
+        repo = _get_repo(fake_repo, owner, repo_name)
         stacks = _github_stacks(repo)
         if stack_number not in stacks:
             raise HTTPException(status_code=404, detail="Not Found")
@@ -1229,7 +1215,7 @@ def _register_github_stack_routes(app: FastAPI, fake_state: FakeGithubState) -> 
         return Response(status_code=204)
 
 
-def _register_graphql_routes(app: FastAPI, fake_state: FakeGithubState) -> None:
+def _register_graphql_routes(app: FastAPI, fake_repo: FakeGithubRepo) -> None:
     """Register GraphQL routes on the fake GitHub app."""
 
     @app.post("/graphql")
@@ -1244,10 +1230,10 @@ def _register_graphql_routes(app: FastAPI, fake_state: FakeGithubState) -> None:
             raise HTTPException(status_code=422, detail="Expected 'variables' to be an object.")
         for mutation in _PR_MUTATIONS:
             if f"{mutation}(input:" in query:
-                return _run_pr_mutation(fake_state, mutation, raw_variables.get("input"))
+                return _run_pr_mutation(fake_repo, mutation, raw_variables.get("input"))
         owner = _require_graphql_variable(raw_variables, "owner")
         repo_name = _require_graphql_variable(raw_variables, "repo")
-        repo = _get_repo(fake_state, owner, repo_name)
+        repo = _get_repo(fake_repo, owner, repo_name)
         repository = _graphql_repo_payload(
             query=query,
             repo=repo,
@@ -1275,7 +1261,7 @@ def _register_graphql_routes(app: FastAPI, fake_state: FakeGithubState) -> None:
         return result
 
 
-def _register_pr_routes(app: FastAPI, fake_state: FakeGithubState) -> None:
+def _register_pr_routes(app: FastAPI, fake_repo: FakeGithubRepo) -> None:
     """Register pull-request, issue, label, and review routes."""
 
     @app.put("/repos/{owner}/{repo_name}/pulls/{pr_number}/merge-async")
@@ -1285,7 +1271,7 @@ def _register_pr_routes(app: FastAPI, fake_state: FakeGithubState) -> None:
         pr_number: int,
         payload: Annotated[dict[str, object], Body(...)],
     ) -> Response:
-        repo = _get_repo(fake_state, owner, repo_name)
+        repo = _get_repo(fake_repo, owner, repo_name)
         pr = repo.prs.get(pr_number)
         if pr is None:
             raise HTTPException(status_code=404, detail="Not Found")
@@ -1360,7 +1346,7 @@ def _register_pr_routes(app: FastAPI, fake_state: FakeGithubState) -> None:
         pr_number: int,
         operation_uuid: str,
     ) -> dict[str, object]:
-        repo = _get_repo(fake_state, owner, repo_name)
+        repo = _get_repo(fake_repo, owner, repo_name)
         operation = repo.stack_merge_operations.get(pr_number)
         if operation is None or operation.uuid != operation_uuid:
             raise HTTPException(status_code=404, detail="Not Found")
@@ -1375,7 +1361,7 @@ def _register_pr_routes(app: FastAPI, fake_state: FakeGithubState) -> None:
         issue_number: int,
         payload: Annotated[dict[str, object], Body(...)],
     ) -> dict[str, object]:
-        repo = _get_repo(fake_state, owner, repo_name)
+        repo = _get_repo(fake_repo, owner, repo_name)
         pr = repo.prs.get(issue_number)
         if pr is None:
             raise HTTPException(status_code=404, detail="Not Found")
@@ -1395,7 +1381,7 @@ def _register_pr_routes(app: FastAPI, fake_state: FakeGithubState) -> None:
         pr_number: int,
         payload: Annotated[dict[str, object], Body(...)],
     ) -> dict[str, object]:
-        repo = _get_repo(fake_state, owner, repo_name)
+        repo = _get_repo(fake_repo, owner, repo_name)
         pr = repo.prs.get(pr_number)
         if pr is None:
             raise HTTPException(status_code=404, detail="Not Found")
@@ -1414,7 +1400,7 @@ def _register_pr_routes(app: FastAPI, fake_state: FakeGithubState) -> None:
         issue_number: int,
         payload: Annotated[dict[str, object], Body(...)],
     ) -> dict[str, object]:
-        repo = _get_repo(fake_state, owner, repo_name)
+        repo = _get_repo(fake_repo, owner, repo_name)
         pr = repo.prs.get(issue_number)
         if pr is None:
             raise HTTPException(status_code=404, detail="Not Found")
@@ -1428,14 +1414,14 @@ def _register_pr_routes(app: FastAPI, fake_state: FakeGithubState) -> None:
         repo_name: str,
         pr_number: int,
     ) -> list[dict[str, object]]:
-        repo = _get_repo(fake_state, owner, repo_name)
+        repo = _get_repo(fake_repo, owner, repo_name)
         reviews = repo.list_pr_reviews(pr_number)
         return [
             review.to_payload() for review in sorted(reviews, key=lambda candidate: candidate.id)
         ]
 
 
-def _register_issue_comment_routes(app: FastAPI, fake_state: FakeGithubState) -> None:
+def _register_issue_comment_routes(app: FastAPI, fake_repo: FakeGithubRepo) -> None:
     """Register issue comment routes on the fake GitHub app."""
 
     @app.post("/repos/{owner}/{repo_name}/issues/{issue_number}/comments", status_code=201)
@@ -1445,7 +1431,7 @@ def _register_issue_comment_routes(app: FastAPI, fake_state: FakeGithubState) ->
         issue_number: int,
         payload: Annotated[dict[str, object], Body(...)],
     ) -> dict[str, object]:
-        repo = _get_repo(fake_state, owner, repo_name)
+        repo = _get_repo(fake_repo, owner, repo_name)
         repo.create_issue_comment(
             body=_require_string(payload, "body"),
             issue_number=issue_number,
@@ -1459,7 +1445,7 @@ def _register_issue_comment_routes(app: FastAPI, fake_state: FakeGithubState) ->
         comment_id: int,
         payload: Annotated[dict[str, object], Body(...)],
     ) -> dict[str, object]:
-        repo = _get_repo(fake_state, owner, repo_name)
+        repo = _get_repo(fake_repo, owner, repo_name)
         comment = repo.update_issue_comment(
             body=_require_string(payload, "body"),
             comment_id=comment_id,
@@ -1478,7 +1464,7 @@ def _register_issue_comment_routes(app: FastAPI, fake_state: FakeGithubState) ->
         repo_name: str,
         comment_id: int,
     ) -> Response:
-        repo = _get_repo(fake_state, owner, repo_name)
+        repo = _get_repo(fake_repo, owner, repo_name)
         deleted = repo.delete_issue_comment(comment_id=comment_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Not Found")
@@ -1518,9 +1504,8 @@ def initialize_bare_repo(
     )
 
 
-def _get_repo(state: FakeGithubState, owner: str, repo_name: str) -> FakeGithubRepo:
-    repo = state.repos.get((owner, repo_name))
-    if repo is None:
+def _get_repo(repo: FakeGithubRepo, owner: str, repo_name: str) -> FakeGithubRepo:
+    if (owner, repo_name) != (repo.owner, repo.name):
         raise HTTPException(status_code=404, detail="Not Found")
     return repo
 
@@ -1537,11 +1522,11 @@ class _MutationRefused(Exception):
     """GitHub accepted the request but refused the change, reporting it as a GraphQL error."""
 
 
-def _run_pr_mutation(state: FakeGithubState, mutation: str, fields: object) -> dict[str, object]:
+def _run_pr_mutation(repo: FakeGithubRepo, mutation: str, fields: object) -> dict[str, object]:
     if not isinstance(fields, dict):
         raise HTTPException(status_code=422, detail="Expected GraphQL variable 'input'.")
     try:
-        pr, repo = _apply_pr_mutation(state, mutation, fields)
+        pr = _apply_pr_mutation(repo, mutation, fields)
     except _MutationRefused as refusal:
         error = {"type": "UNPROCESSABLE", "path": [mutation], "message": str(refusal)}
         return {"data": {mutation: None}, "errors": [error]}
@@ -1549,12 +1534,11 @@ def _run_pr_mutation(state: FakeGithubState, mutation: str, fields: object) -> d
 
 
 def _apply_pr_mutation(
-    state: FakeGithubState, mutation: str, fields: dict[str, object]
-) -> tuple[FakeGithubPR, FakeGithubRepo]:
+    repo: FakeGithubRepo, mutation: str, fields: dict[str, object]
+) -> FakeGithubPR:
     if mutation == "createPullRequest":
         repo_id = _require_string(fields, "repositoryId")
-        repo = next((repo for repo in state.repos.values() if repo.node_id == repo_id), None)
-        if repo is None:
+        if repo_id != repo.node_id:
             raise _MutationRefused(f"Could not resolve to a node with the global id {repo_id!r}.")
         head_ref = _require_string(fields, "headRefName")
         base_ref = _require_string(fields, "baseRefName")
@@ -1568,14 +1552,16 @@ def _apply_pr_mutation(
             head_ref=head_ref,
             title=_require_string(fields, "title"),
         )
-        return pr, repo
-    pr, repo = _find_pr_by_node_id(state, _require_string(fields, "pullRequestId"))
+        return pr
+    pr = repo.find_pr_by_node_id(_require_string(fields, "pullRequestId"))
+    if pr is None:
+        raise HTTPException(status_code=404, detail="Not Found")
     repo.refresh_pr_state(pr)
     if mutation == "updatePullRequest":
         _update_pr(repo, pr, fields)
     else:
         pr.is_draft = mutation == "convertPullRequestToDraft"
-    return pr, repo
+    return pr
 
 
 def _update_pr(repo: FakeGithubRepo, pr: FakeGithubPR, fields: dict[str, object]) -> None:
@@ -1601,17 +1587,6 @@ def _update_pr(repo: FakeGithubRepo, pr: FakeGithubPR, fields: dict[str, object]
         pr.body = body
     if base_ref is not None:
         repo.update_pr_base(pr, base_ref=base_ref)
-
-
-def _find_pr_by_node_id(
-    state: FakeGithubState,
-    node_id: str,
-) -> tuple[FakeGithubPR, FakeGithubRepo]:
-    for repo in state.repos.values():
-        pr = repo.find_pr_by_node_id(node_id)
-        if pr is not None:
-            return pr, repo
-    raise HTTPException(status_code=404, detail="Not Found")
 
 
 def _optional_string(payload: dict[str, object], key: str) -> str | None:

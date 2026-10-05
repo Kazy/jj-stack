@@ -24,7 +24,6 @@ from jj_stack.state.store import TrackingStore
 
 from .fake_github import (
     FakeGithubRepo,
-    FakeGithubState,
     create_app,
     initialize_bare_repo,
 )
@@ -98,7 +97,7 @@ def configure_fake_github_environment(
         tmp_path,
         extra_lines=extra_config_lines,
     )
-    app = create_app(FakeGithubState.single_repo(fake_repo))
+    app = create_app(fake_repo)
     patch_github_client_builders(
         monkeypatch,
         app=app,
@@ -232,7 +231,7 @@ def _build_submitted_stack_template(template_root: Path, size: int) -> None:
         for index in range(1, size + 1):
             commit_file(repo, f"feature {index}", f"feature-{index}.txt")
 
-        app = create_app(FakeGithubState.single_repo(fake_repo))
+        app = create_app(fake_repo)
         build_github_client, parse_github_repo = fake_github_client_wiring(fake_repo, app)
 
         for module, attr, new in (

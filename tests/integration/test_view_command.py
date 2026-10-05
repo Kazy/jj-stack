@@ -11,7 +11,7 @@ from jj_stack.jj.client import JjClient
 from jj_stack.models.github_details import GithubCheck, GithubPRMergeDetails, GithubReviewThread
 from jj_stack.state.store import TrackingStore, resolve_state_path
 
-from ..support.fake_github import FakeGithubState, FakeMergeRequirements, create_app
+from ..support.fake_github import FakeMergeRequirements, create_app
 from ..support.integration_helpers import (
     OfflineGithubClient,
     commit_file,
@@ -470,7 +470,7 @@ def test_view_preserves_saved_identity_when_github_lookup_fails(
     repo, fake_repo = init_fake_github_repo_with_submitted_feature(tmp_path)
     config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
 
-    app = create_app(FakeGithubState.single_repo(fake_repo))
+    app = create_app(fake_repo)
 
     class FailingPRLookupClient(GithubClient):
         async def get_open_prs_by_head_refs(self, *, head_refs):
@@ -520,7 +520,7 @@ def test_view_stays_local_when_github_is_unavailable_and_no_cache_exists(
     config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
     commit_file(repo, "feature 1", "feature-1.txt")
 
-    app = create_app(FakeGithubState.single_repo(fake_repo))
+    app = create_app(fake_repo)
 
     patch_github_client_builders(
         monkeypatch,

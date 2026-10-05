@@ -5,7 +5,7 @@ from pathlib import Path
 from jj_stack.github.client import GithubClient
 from jj_stack.state.store import TrackingStore
 
-from ..support.fake_github import FakeGithubState, create_app
+from ..support.fake_github import create_app
 from ..support.integration_helpers import (
     init_fake_github_repo_with_submitted_feature,
     init_fake_github_repo_with_submitted_stack,
@@ -117,7 +117,7 @@ def test_unstack_locked_stack_stops_without_closing_or_forgetting(
     state_store = TrackingStore.for_repo(repo)
     state_before = state_store.load()
     fake_repo.github_stacks = {7: (1, 2)}
-    app = create_app(FakeGithubState.single_repo(fake_repo))
+    app = create_app(fake_repo)
 
     class LockedStackClient(GithubClient):
         async def unstack(self, *, stack_number):

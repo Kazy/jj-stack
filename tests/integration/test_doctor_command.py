@@ -7,7 +7,7 @@ from jj_stack.github.client import GithubClient
 from jj_stack.jj.client import JjClient
 from jj_stack.pr_branch_namespace import current_pr_branch_namespace
 
-from ..support.fake_github import FakeGithubState, create_app
+from ..support.fake_github import create_app
 from ..support.integration_helpers import (
     expose_pr_branch_namespace,
     init_fake_github_repo,
@@ -34,7 +34,7 @@ def _configure_doctor_environment(
 
     patch_github_client_builders(
         monkeypatch,
-        app=create_app(FakeGithubState.single_repo(fake_repo)),
+        app=create_app(fake_repo),
         fake_repo=fake_repo,
         client_type=client_type,
     )

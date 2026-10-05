@@ -11,7 +11,7 @@ from jj_stack.jj.client import JjClient
 from jj_stack.models.github_details import GithubReviewThread
 from jj_stack.state.store import TrackingStore
 
-from ..support.fake_github import FakeGithubState, FakeMergeRequirements, create_app
+from ..support.fake_github import FakeMergeRequirements, create_app
 from ..support.integration_helpers import (
     OfflineGithubClient,
     commit_file,
@@ -463,7 +463,7 @@ def test_list_falls_back_when_github_unavailable(
     repo, fake_repo = init_fake_github_repo_with_submitted_feature(tmp_path)
     config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
 
-    app = create_app(FakeGithubState.single_repo(fake_repo))
+    app = create_app(fake_repo)
 
     patch_github_client_builders(
         monkeypatch,

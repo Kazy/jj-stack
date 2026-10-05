@@ -6,7 +6,7 @@ import jj_stack.commands.submit.command as submit_command
 from jj_stack.errors import CliError
 from jj_stack.github.client import GithubClient, GithubClientError
 
-from .fake_github import FakeGithubState, create_app
+from .fake_github import create_app
 from .integration_helpers import patch_github_client_builders
 
 
@@ -20,7 +20,7 @@ def install_submit_fault(
         _install_remote_push_fault(monkeypatch)
         return
 
-    app = create_app(FakeGithubState.single_repo(fake_repo))
+    app = create_app(fake_repo)
     failed = False
 
     class FaultingGithubClient(GithubClient):

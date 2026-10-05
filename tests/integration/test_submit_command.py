@@ -25,7 +25,6 @@ from jj_stack.state.store import TrackingStore, resolve_state_path
 
 from ..support.fake_github import (
     FakeGithubRepo,
-    FakeGithubState,
     create_app,
 )
 from ..support.integration_helpers import (
@@ -610,7 +609,7 @@ def test_submit_github_stack_recovers_lost_create_and_retries_blocked_append(
     commit_file(repo, "feature 1", "feature-1.txt")
     commit_file(repo, "feature 2", "feature-2.txt")
     appended: list[tuple[int, ...]] = []
-    app = create_app(FakeGithubState.single_repo(fake_repo))
+    app = create_app(fake_repo)
 
     class LoseFirstCreateResponseClient(GithubClient):
         async def create_stack(self, *, pr_numbers):
@@ -799,7 +798,7 @@ def test_submit_stack_preflight_failures_recover_without_persisted_phase(
 ) -> None:
     repo, fake_repo = init_fake_github_repo_with_submitted_stack(tmp_path, size=2)
     config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
-    app = create_app(FakeGithubState.single_repo(fake_repo))
+    app = create_app(fake_repo)
     failure = "availability"
 
     class PreflightFailureClient(GithubClient):
@@ -1827,7 +1826,7 @@ def test_submit_reports_published_prs_when_the_overview_update_needs_retrying(
                 raise GithubClientError("GitHub request failed: 404", status_code=404)
             return await super().update_issue_comment(comment_id=comment_id, body=body)
 
-    app = create_app(FakeGithubState.single_repo(fake_repo))
+    app = create_app(fake_repo)
 
     patch_github_client_builders(
         monkeypatch,
@@ -2300,7 +2299,7 @@ def test_submit_retry_keeps_a_pr_created_while_another_request_failed(
     change_id_1 = stack.changes[0].change_id
     change_id_2 = stack.changes[1].change_id
 
-    app = create_app(FakeGithubState.single_repo(fake_repo))
+    app = create_app(fake_repo)
 
     class FailSpecificPRClient(GithubClient):
         async def create_pr(self, *, title, **fields):
@@ -2371,7 +2370,7 @@ def test_submit_rerun_converges_pr_metadata_after_partial_create_failure(
     )
     commit_file(repo, "feature 1", "feature-1.txt")
 
-    app = create_app(FakeGithubState.single_repo(fake_repo))
+    app = create_app(fake_repo)
     metadata_failure_injected = False
 
     class FlakyMetadataClient(GithubClient):
@@ -2438,7 +2437,7 @@ def test_submit_unchanged_rerun_skips_pr_metadata_writes(
         ],
     )
     commit_file(repo, "feature 1", "feature-1.txt")
-    app = create_app(FakeGithubState.single_repo(fake_repo))
+    app = create_app(fake_repo)
 
     patch_github_client_builders(
         monkeypatch,
@@ -2535,7 +2534,7 @@ def test_submit_re_request_observes_reviews_before_mutation_and_retries(
         ],
     )
     commit_file(repo, "feature 1", "feature-1.txt")
-    app = create_app(FakeGithubState.single_repo(fake_repo))
+    app = create_app(fake_repo)
     fail_review_load = [True]
 
     class FailingReviewLoadClient(GithubClient):

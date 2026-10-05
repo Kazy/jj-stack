@@ -11,7 +11,7 @@ import pytest
 from jj_stack.github.client import GithubClient, GithubClientError
 from jj_stack.github.resolution import GithubRepoAddress
 
-from ..support.fake_github import FakeGithubState, create_app
+from ..support.fake_github import create_app
 from ..support.integration_helpers import (
     init_fake_github_repo_with_submitted_feature,
     init_fake_github_repo_with_submitted_stack,
@@ -25,7 +25,7 @@ def test_fake_rejects_retargets_that_github_cannot_apply(tmp_path: Path) -> None
     _repo, fake = init_fake_github_repo_with_submitted_feature(tmp_path)
     pr = fake.prs[1]
     update_remote_ref(fake, branch="landed", target=pr.head_sha)
-    app = create_app(FakeGithubState.single_repo(fake))
+    app = create_app(fake)
 
     async def exercise() -> None:
         transport = httpx2.ASGITransport(app=app)
@@ -58,7 +58,7 @@ def test_fake_partial_stack_merge_preserves_base_changes_in_merge_and_survivor(
     advanced = fake.advance_branch("integration", path="upstream.txt", contents="upstream\n")
     bottom, top = fake.prs[1], fake.prs[2]
     submitted_top = top.head_sha
-    app = create_app(FakeGithubState.single_repo(fake))
+    app = create_app(fake)
     path = f"/repos/{fake.full_name}"
 
     async def exercise() -> None:
