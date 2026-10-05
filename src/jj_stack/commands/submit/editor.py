@@ -9,6 +9,8 @@ import tempfile
 import tomllib
 from pathlib import Path
 
+from pydantic import TypeAdapter, ValidationError
+
 import jj_stack.ui as ui
 from jj_stack.errors import CliError, UsageError
 from jj_stack.identifiers import ChangeId
@@ -17,6 +19,7 @@ from jj_stack.models.stack import LocalCommit
 
 from .models import GeneratedDescription
 
+_EDITOR_ARGV = TypeAdapter(list[str])
 _EDIT_SEPARATOR_PREFIX = "====== change "
 _EDIT_COMMENT_PREFIX = "JJ:"
 _EDIT_DRAFT_PREFIX = "JJ: Draft:"
@@ -156,19 +159,10 @@ def _editor_command_from_toml_array(command: str) -> list[str] | None:
     if not command.startswith("["):
         return None
     try:
-        parsed = tomllib.loads(f"editor = {command}")
-    except tomllib.TOMLDecodeError:
+        argv = _EDITOR_ARGV.validate_python(tomllib.loads(f"editor = {command}")["editor"])
+    except tomllib.TOMLDecodeError, ValidationError:
         return None
-    value = parsed["editor"]
-    if not isinstance(value, list):
-        return None
-    argv: list[str] = []
-    for part in value:
-        if not isinstance(part, str):
-            return None
-        if part:
-            argv.append(part)
-    return argv or None
+    return [part for part in argv if part] or None
 
 
 def _strip_surrounding_quotes(text: str) -> str:
