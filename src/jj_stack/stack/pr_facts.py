@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Literal
 
 import jj_stack.github.resolution as github_resolution
 from jj_stack.bootstrap import CommandContext
@@ -38,14 +39,14 @@ async def observe_prs(
     github_client: GithubClient,
     remote_name: str,
     state: TrackingState,
-    include_dependents: bool = False,
-    include_open_head_prs: bool = False,
-    include_remote_targets: bool = True,
+    branch_reads: Literal["none", "targets", "targets_and_prs"] = "targets",
     github_repo_snapshot: GithubRepo | None = None,
     local_commits: StackObservation | None = None,
 ) -> RepoFacts:
-    """Read PR state, optionally skipping branch target lookups."""
+    """Read PR state plus the head-branch reads that `branch_reads` names."""
 
+    read_targets = branch_reads != "none"
+    read_branch_prs = branch_reads == "targets_and_prs"
     tracked_prs = {
         change_id: tracked
         for change_id in dict.fromkeys(change_ids)
@@ -65,18 +66,18 @@ async def observe_prs(
         local_task = asyncio.create_task(asyncio.to_thread(observe_local_commits))
     else:
         local_task = asyncio.create_task(asyncio.sleep(0, result=local_commits))
-    if include_open_head_prs:
+    if read_branch_prs:
         open_heads_request = github_client.get_open_prs_by_head_refs(head_refs=head_refs)
     else:
         open_heads_request = asyncio.sleep(0, result={})
-    if include_remote_targets and head_refs:
+    if read_targets and head_refs:
         remote_targets_request = github_client.get_branch_targets(branches=head_refs)
     else:
         remote_targets_request = asyncio.sleep(0, result={})
     numbered_task = asyncio.create_task(github_client.get_prs_by_numbers(pr_numbers=pr_numbers))
     open_heads_task = asyncio.create_task(open_heads_request)
     by_base_task: asyncio.Task[dict[str, tuple[GithubPR, ...]]]
-    if include_dependents:
+    if read_branch_prs:
         by_base_task = asyncio.create_task(
             github_client.get_prs_by_base_refs(base_refs=head_refs)
         )
@@ -111,13 +112,11 @@ async def observe_prs(
             remote_name=remote_name,
             tracked=tracked,
             open_prs_on_branch=(
-                by_head.get(identity.head_ref, ()) if include_open_head_prs else UNOBSERVED
+                by_head.get(identity.head_ref, ()) if read_branch_prs else UNOBSERVED
             ),
             local=matches,
             pr=numbered.get(identity.pr_number),
-            remote_target=(
-                remote_targets.get(identity.head_ref) if include_remote_targets else UNOBSERVED
-            ),
+            remote_target=(remote_targets.get(identity.head_ref) if read_targets else UNOBSERVED),
         )
         for change_id, tracked in tracked_prs.items()
         for identity in (tracked.pr_identity,)

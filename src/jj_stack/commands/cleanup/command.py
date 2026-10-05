@@ -389,12 +389,11 @@ async def _run_tracked_pr_cleanup_pass(cleanup_pass: _CleanupPass) -> None:
     candidates = prepared_cleanup.candidates
     github_client = cleanup_pass.github_client
     observation = await observe_prs(
+        branch_reads="targets_and_prs",
         change_ids=tuple(candidates),
         context=prepared_cleanup.context,
         github_client=github_client,
         github_repo_snapshot=cleanup_pass.github_repo,
-        include_dependents=True,
-        include_open_head_prs=True,
         remote_name=cleanup_pass.remote.name,
         state=prepared_cleanup.state,
     )

@@ -87,10 +87,10 @@ async def observe_global_sync(
     )
     prs_task = asyncio.create_task(
         observe_prs(
+            branch_reads="none",
             change_ids=change_ids,
             context=context,
             github_client=github,
-            include_remote_targets=False,
             local_commits=observed,
             remote_name=remote_name,
             state=state,

@@ -52,11 +52,11 @@ async def complete_sync_observation(
     missing_ids = tuple(change_id for change_id in change_ids if change_id not in initial.prs)
     missing = (
         await observe_prs(
+            branch_reads="none",
             change_ids=missing_ids,
             context=context,
             github_client=github,
             github_repo_snapshot=initial.github_repo,
-            include_remote_targets=False,
             remote_name=remote_name,
             state=state,
         )

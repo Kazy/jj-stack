@@ -296,11 +296,11 @@ async def _run_selected_convergence(run: GithubRun, *, prepared: PreparedLocalSt
     with console.spinner(description="Inspecting pull requests") as progress:
         prs_task = asyncio.create_task(
             observe_prs(
+                branch_reads="none",
                 change_ids=tuple(change.change_id for change in selected),
                 context=context,
                 github_client=github,
                 github_repo_snapshot=None if run.trunk is None else run.trunk.github_repo,
-                include_remote_targets=False,
                 remote_name=remote.name,
                 state=prepared.state,
             )
