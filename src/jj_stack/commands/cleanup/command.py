@@ -37,6 +37,7 @@ from jj_stack.commands.cleanup.actions import (
     github_stack_cleanup_blockers,
     plan_pr_cleanup,
 )
+from jj_stack.commands.github_run import GithubRun
 from jj_stack.errors import (
     AmbiguousSelectionError,
     CliError,
@@ -159,24 +160,23 @@ def _run_cleanup_command(
 
 
 async def cleanup_tracked_prs(
+    run: GithubRun,
     *,
     change_ids: tuple[ChangeId, ...],
-    context: CommandContext,
-    dry_run: bool,
-    github_client: GithubClient,
-    github_target: GithubTarget,
     planned_detached_dependents: frozenset[int] = frozenset(),
     planned_local_removals: frozenset[ChangeId] = frozenset(),
 ) -> bool:
     """Run cleanup for PRs reconciled by another command, returning whether any was blocked."""
 
+    context = run.context
+    dry_run = run.dry_run
     state = context.state_store.load()
     prepared_cleanup = PreparedCleanup(
         candidates=_cleanup_candidates(state, change_ids),
         close_open_prs=False,
         context=context,
         dry_run=dry_run,
-        github_target=github_target,
+        github_target=run.target,
         state=state,
     )
 
@@ -193,7 +193,7 @@ async def cleanup_tracked_prs(
 
     try:
         actions = await _run_cleanup_async(
-            github_client=github_client,
+            github_client=run.github,
             prepared_cleanup=prepared_cleanup,
             preview_detached_dependents=(planned_detached_dependents if dry_run else frozenset()),
             preview_local_removals=(planned_local_removals if dry_run else frozenset()),
@@ -208,14 +208,7 @@ async def cleanup_tracked_prs(
     return blocked
 
 
-async def cleanup_stack_without_local_copies(
-    *,
-    change_id: ChangeId,
-    context: CommandContext,
-    dry_run: bool,
-    github_client: GithubClient,
-    github_target: GithubTarget,
-) -> int:
+async def cleanup_stack_without_local_copies(run: GithubRun, *, change_id: ChangeId) -> int:
     """Clean up the merged PRs of a tracked change's GitHub stack once its local copies are gone.
 
     jj abandons the old targets of remote refs that a fetch deletes or moves. When GitHub deleted
@@ -223,28 +216,25 @@ async def cleanup_stack_without_local_copies(
     itself, leaving only the saved links to reconcile.
     """
 
-    state = context.state_store.load()
+    state = run.context.state_store.load()
     pr_number = state.prs[change_id].pr_identity.pr_number
     console.output(
         t"Change {ui.change_id(change_id)} has no visible commit, so there is no local stack to "
         t"update; cleaning up its merged pull requests."
     )
     with console.spinner(description="Inspecting GitHub stacks"):
-        stacks = await observe_github_stacks(github=github_client)
+        stacks = await observe_github_stacks(github=run.github)
     stack = next((item for item in stacks if pr_number in item.pr_numbers), None)
     selected = {pr_number}
     if stack is not None:
         selected.update(pr.number for pr in stack.historical_prs)
     blocked = await cleanup_tracked_prs(
+        run,
         change_ids=tuple(
             linked_change_id
             for linked_change_id, tracked in state.prs.items()
             if tracked.pr_identity.pr_number in selected
         ),
-        context=context,
-        dry_run=dry_run,
-        github_client=github_client,
-        github_target=github_target,
     )
     return 1 if blocked else 0
 

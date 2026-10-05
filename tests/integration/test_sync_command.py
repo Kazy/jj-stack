@@ -932,7 +932,7 @@ def test_sync_retries_id_restoration_after_a_partial_merge_and_native_rebase(
     assert JjClient(repo).resolve_commit(survivor.change_id).commit_id == survivor.commit_id
     real_refresh = sync_apply.refresh_selected_prs
 
-    async def fail_refresh(**_kwargs):
+    async def fail_refresh(*_args, **_kwargs):
         raise CliError("injected survivor submit failure")
 
     monkeypatch.setattr(sync_apply, "refresh_selected_prs", fail_refresh)
@@ -1271,12 +1271,12 @@ def test_sync_rebases_the_current_commit_of_trailing_local_work_without_creating
     _squash_merge_pr(fake_repo, 1)
     real_apply_pr_finishes = sync_apply.apply_pr_finishes
 
-    async def describe_trailing_then_finish(**kwargs):
+    async def describe_trailing_then_finish(*args, **kwargs):
         # Another process rewrites a survivor after planning observed its commit.
         run_command(
             ["jj", "describe", "-r", trailing.change_id, "-m", "described during sync"], repo
         )
-        return await real_apply_pr_finishes(**kwargs)
+        return await real_apply_pr_finishes(*args, **kwargs)
 
     monkeypatch.setattr(sync_apply, "apply_pr_finishes", describe_trailing_then_finish)
 

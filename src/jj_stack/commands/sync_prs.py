@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import jj_stack.console as console
 import jj_stack.ui as ui
-from jj_stack.bootstrap import CommandContext
+from jj_stack.commands.github_run import GithubRun, ObservedTrunk
 from jj_stack.commands.submit.descriptions import preserve_external_pr_text, read_pr_template
 from jj_stack.commands.submit.inputs import (
     preflight_publication_stack,
@@ -13,9 +13,7 @@ from jj_stack.commands.submit.inputs import (
 from jj_stack.commands.submit.models import PreparedSubmitChange, PRMetadataAction
 from jj_stack.commands.submit.publication import plan_pr_updates, publish_prepared
 from jj_stack.errors import CliError, ConflictedStackError
-from jj_stack.github.client import GithubClient
 from jj_stack.github.error_messages import read_or_stop
-from jj_stack.github.resolution import GithubTarget
 from jj_stack.identifiers import ChangeId, CommitId, short_change_id
 from jj_stack.models.github import GithubStack
 from jj_stack.stack.convergence_models import ConvergenceActions
@@ -23,19 +21,16 @@ from jj_stack.stack.selected import select_stack_path
 
 
 async def refresh_selected_prs(
+    run: GithubRun,
     *,
     actions: ConvergenceActions,
-    context: CommandContext,
-    dry_run: bool,
-    github: GithubClient,
     github_stacks: tuple[GithubStack, ...],
-    repository_id: str,
-    target: GithubTarget,
-    trunk_branch: str,
+    trunk: ObservedTrunk,
 ) -> None:
     if not actions.on_trunk:
         return
-    if actions.remaining_changes and dry_run:
+    context = run.context
+    if actions.remaining_changes and run.dry_run:
         short = short_change_id(actions.remaining_changes[-1].change_id)
         console.output(
             t"Run {ui.cmd(f'jj-stack sync {short}')} to apply the "
@@ -60,15 +55,16 @@ async def refresh_selected_prs(
                 description="Fetching pull request template from GitHub", report_changes=True
             ):
                 template = await read_or_stop(
-                    github.get_pr_template(), message="Could not load the pull request template."
+                    run.github.get_pr_template(),
+                    message="Could not load the pull request template.",
                 )
         inputs = prepare_publication_inputs(
             context=context,
             template=template,
             stack=path.stack,
             state=state,
-            remote=target.remote,
-            repository_id=repository_id,
+            remote=run.target.remote,
+            repository_id=trunk.github_repo.node_id,
             is_maximal_path=path.is_maximal,
         )
     except ConflictedStackError as error:
@@ -103,7 +99,7 @@ async def refresh_selected_prs(
         template=inputs.pr_template,
     )
     plans = plan_pr_updates(
-        bottom_base_branch=trunk_branch,
+        bottom_base_branch=trunk.branch,
         drafts=drafts,
         generated_descriptions=descriptions,
         metadata=PRMetadataAction(
@@ -120,7 +116,7 @@ async def refresh_selected_prs(
     )
     await publish_prepared(
         context=context,
-        github_client=github,
+        github_client=run.github,
         prepared_inputs=inputs,
         pr_plans=plans,
         remote_targets=remote_targets,
@@ -128,7 +124,7 @@ async def refresh_selected_prs(
         t"{ui.cmd(f'jj-stack submit {short_change_id(selected_ids[-1])}')}, then clean up "
         t"the merged pull requests with {ui.join(ui.cmd, cleanup_commands)}.",
         observed_stacks=github_stacks,
-        trunk_branch=trunk_branch,
-        trunk_targets={trunk_branch: path.stack.trunk.commit_id},
+        trunk_branch=trunk.branch,
+        trunk_targets={trunk.branch: path.stack.trunk.commit_id},
         dry_run=False,
     )

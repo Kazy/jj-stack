@@ -38,6 +38,7 @@ import jj_stack.console as console
 import jj_stack.ui as ui
 from jj_stack.bootstrap import CommandContext, GlobalOptions, bootstrap_context
 from jj_stack.commands.cleanup.command import cleanup_stack_without_local_copies
+from jj_stack.commands.github_run import GithubRun, ObservedTrunk
 from jj_stack.commands.sync import converge_selected_stack
 from jj_stack.concurrency import wait_for_read_tasks
 from jj_stack.config import MergeMethod
@@ -138,7 +139,7 @@ async def _run_merge(
                     target=target,
                     target_change_id=target_change_id,
                 )
-            outcome, github_repo_state = await _request_merge_async(prepared_merge, github_client)
+            outcome, trunk = await _request_merge_async(prepared_merge, github_client)
         if isinstance(outcome, PendingMerge):
             _print_merge_result(outcome.result())
             _report_merge_requested(outcome, head_change_id=prepared_merge.stack.head.change_id)
@@ -162,7 +163,7 @@ async def _run_merge(
                 exit_code = await _update_local_stack(
                     context=context,
                     github_client=github_client,
-                    github_repo_state=github_repo_state,
+                    trunk=trunk,
                     prepared_merge=prepared_merge,
                     result=result,
                 )
@@ -192,7 +193,7 @@ async def _update_local_stack(
     *,
     context: CommandContext,
     github_client: GithubClient,
-    github_repo_state: GithubRepo,
+    trunk: ObservedTrunk,
     prepared_merge: PreparedMerge,
     result: MergeResult,
 ) -> int:
@@ -201,21 +202,16 @@ async def _update_local_stack(
     head = prepared_merge.stack.head
     with console.spinner(description="Fetching trunk"):
         context.jj_client.fetch_remote(remote=prepared_merge.target.remote.name)
-    if context.jj_client.query_commits_by_change_ids((head.change_id,))[head.change_id]:
-        return await converge_selected_stack(
-            context=context,
-            github=github_client,
-            github_repo=github_repo_state,
-            dry_run=False,
-            revset=head.change_id,
-        )
-    return await cleanup_stack_without_local_copies(
-        change_id=result.merged_change_ids[-1],
+    run = GithubRun(
         context=context,
         dry_run=False,
-        github_client=github_client,
-        github_target=prepared_merge.target,
+        github=github_client,
+        target=prepared_merge.target,
+        trunk=trunk,
     )
+    if context.jj_client.query_commits_by_change_ids((head.change_id,))[head.change_id]:
+        return await converge_selected_stack(run, revset=head.change_id)
+    return await cleanup_stack_without_local_copies(run, change_id=result.merged_change_ids[-1])
 
 
 def _warn_incomplete_post_merge_sync(sync_head: str, *, has_recovery_hint: bool) -> None:
@@ -277,7 +273,7 @@ def _prepare_merge(
 
 async def _request_merge_async(
     prepared_merge: PreparedMerge, github_client: GithubClient
-) -> tuple[MergeResult | PendingMerge, GithubRepo]:
+) -> tuple[MergeResult | PendingMerge, ObservedTrunk]:
     stack = prepared_merge.stack
     github_repo = prepared_merge.target.repo
     remote = prepared_merge.target.remote
@@ -290,6 +286,7 @@ async def _request_merge_async(
             remote=remote,
             trunk_commit_id=stack.trunk.commit_id,
         )
+    trunk = ObservedTrunk(github_repo=github_repo_state, branch=trunk_branch)
     queue_task = asyncio.create_task(
         read_or_stop(
             github_client.base_branch_uses_merge_queue(branch=trunk_branch),
@@ -351,13 +348,13 @@ async def _request_merge_async(
             if async_merge.planned
             else None
         )
-        return MergeResult(actions=async_merge.actions(action)), github_repo_state
+        return MergeResult(actions=async_merge.actions(action)), trunk
     return await execute_async_merge(
         execution=execution,
         github=github_client,
         method=method,
         merge=async_merge,
-    ), github_repo_state
+    ), trunk
 
 
 def _resolve_merge_method(

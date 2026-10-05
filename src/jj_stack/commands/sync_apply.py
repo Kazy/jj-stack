@@ -10,11 +10,11 @@ import jj_stack.console as console
 import jj_stack.ui as ui
 from jj_stack.bootstrap import CommandContext
 from jj_stack.commands.cleanup.command import cleanup_tracked_prs
+from jj_stack.commands.github_run import GithubRun, ObservedTrunk
 from jj_stack.commands.sync_prs import refresh_selected_prs
 from jj_stack.errors import CliError
 from jj_stack.formatting import format_pr_label
-from jj_stack.github.client import GithubClient, GithubClientError
-from jj_stack.github.resolution import GithubTarget
+from jj_stack.github.client import GithubClientError
 from jj_stack.identifiers import ChangeId, CommitId, short_change_id
 from jj_stack.jj.cli_args import JjCliArgs
 from jj_stack.jj.client import PRRefUpdate, quote_revset_symbol
@@ -42,20 +42,10 @@ class PRFinishResult:
 
 
 async def apply_pr_finishes(
-    *,
-    plans: tuple[OnTrunkChange, ...],
-    dry_run: bool,
-    github: GithubClient,
+    run: GithubRun, plans: tuple[OnTrunkChange, ...]
 ) -> tuple[PRFinishResult, ...]:
-    results: list[PRFinishResult] = []
-    for plan in plans:
-        results.append(
-            await _apply_pr_finish(
-                plan=plan,
-                dry_run=dry_run,
-                github=github,
-            )
-        )
+    dry_run = run.dry_run
+    results = [await _apply_pr_finish(run, plan) for plan in plans]
     visible = tuple(result for result in results if result.outcome != "already_terminal")
     if visible:
         console.output(
@@ -72,7 +62,7 @@ async def apply_pr_finishes(
             else:
                 pr_label = format_pr_label(
                     result.candidate.pr_identity.pr_number,
-                    repo=github.repo,
+                    repo=run.github.repo,
                 )
                 console.output(
                     t"  {marker} close {pr_label} for {ui.change_id(result.change_id)}"
@@ -80,18 +70,16 @@ async def apply_pr_finishes(
     return tuple(results)
 
 
-async def _apply_pr_finish(
-    *, plan: OnTrunkChange, dry_run: bool, github: GithubClient
-) -> PRFinishResult:
+async def _apply_pr_finish(run: GithubRun, plan: OnTrunkChange) -> PRFinishResult:
     candidate = plan.candidate
     pr = plan.close_pr
     if pr is None:
         return PRFinishResult(plan.change_id, candidate, "already_terminal")
-    if dry_run:
+    if run.dry_run:
         return PRFinishResult(plan.change_id, candidate, "finished")
     pr_label = format_pr_label(pr.number, url=pr.html_url)
     try:
-        await github.close_pr(pr_number=pr.number)
+        await run.github.close_pr(pr_number=pr.number)
     except GithubClientError as error:
         return PRFinishResult(
             plan.change_id,
@@ -103,70 +91,39 @@ async def _apply_pr_finish(
 
 
 async def apply_selected_convergence(
+    run: GithubRun,
     *,
-    context: CommandContext,
-    dry_run: bool,
-    github: GithubClient,
     plan: SelectedConvergencePlan,
     github_stacks: tuple[GithubStack, ...],
-    repository_id: str,
-    trunk_branch: str,
-    target: GithubTarget,
+    trunk: ObservedTrunk,
     trunk_commit_id: CommitId,
 ) -> int:
     """Apply a stack sync plan in dependency order."""
 
     actions = plan.actions
     if isinstance(plan, GithubStackRebasePlan):
-        _apply_github_stack_rebase(
-            context=context,
-            dry_run=dry_run,
-            plan=plan,
-            remote_name=target.remote.name,
-            trunk_commit_id=trunk_commit_id,
-        )
+        _apply_github_stack_rebase(run, plan=plan, trunk_commit_id=trunk_commit_id)
         return 0
-    results = await apply_pr_finishes(
-        plans=actions.on_trunk,
-        dry_run=dry_run,
-        github=github,
-    )
-    dependencies = _apply_local_convergence(
-        context=context,
-        dry_run=dry_run,
-        plan=plan,
-        remote_name=target.remote.name,
-        trunk_commit_id=trunk_commit_id,
-    )
+    results = await apply_pr_finishes(run, actions.on_trunk)
+    dependencies = _apply_local_convergence(run, plan=plan, trunk_commit_id=trunk_commit_id)
     await refresh_selected_prs(
+        run,
         actions=actions,
-        context=context,
-        dry_run=dry_run,
-        github=github,
         github_stacks=github_stacks,
-        repository_id=repository_id,
-        target=target,
-        trunk_branch=trunk_branch,
+        trunk=trunk,
     )
     return await _cleanup_reconciled_prs(
-        context=context,
-        dry_run=dry_run,
+        run,
         finish_results=results,
-        github=github,
         remaining_prs=actions.remaining_prs,
         dependencies=dependencies,
-        target=target,
     )
 
 
 def _apply_local_convergence(
-    *,
-    context: CommandContext,
-    dry_run: bool,
-    plan: SelectedConvergencePlan,
-    remote_name: str,
-    trunk_commit_id: CommitId,
+    run: GithubRun, *, plan: SelectedConvergencePlan, trunk_commit_id: CommitId
 ) -> dict[ChangeId, tuple[LocalCommit, ...]]:
+    context = run.context
     actions = plan.actions
     rewritten = plan.rewritten_changes if isinstance(plan, GithubStackMergePlan) else ()
     adopt = adopts_github_rewrite(rewritten)
@@ -184,7 +141,7 @@ def _apply_local_convergence(
         replaced = tuple(item.local_change.commit_id for item in rewritten)
         destination = top.pr.head.sha
         attachment = context.jj_client.import_remote_pr_branch_ref(
-            remote=remote_name,
+            remote=run.target.remote.name,
             branch=top.candidate.pr_identity.head_ref,
             expected_target=destination,
             expected_chain=tuple(
@@ -205,7 +162,7 @@ def _apply_local_convergence(
             if isinstance(plan, GithubStackMergePlan) and replaced
             else None
         )
-        if dry_run:
+        if run.dry_run:
             return _observe_removal_dependencies(context=context, actions=actions)
         if operation_id is not None:
             context.jj_client.integrate_operation(operation_id)
@@ -266,13 +223,10 @@ def _prepare_merge_stack_rewrite(
 
 
 def _apply_github_stack_rebase(
-    *,
-    context: CommandContext,
-    dry_run: bool,
-    plan: GithubStackRebasePlan,
-    remote_name: str,
-    trunk_commit_id: CommitId,
+    run: GithubRun, *, plan: GithubStackRebasePlan, trunk_commit_id: CommitId
 ) -> None:
+    context = run.context
+    remote_name = run.target.remote.name
     adopted = plan.rewritten_changes
     top = adopted[-1]
     with context.jj_client.import_remote_pr_branch_ref(
@@ -286,7 +240,7 @@ def _apply_github_stack_rebase(
             plan=plan,
             trunk_commit_id=trunk_commit_id,
         )
-        if dry_run:
+        if run.dry_run:
             return
         if operation_id is not None:
             context.jj_client.integrate_operation(operation_id)
@@ -388,14 +342,11 @@ def _verified_local_rebase(
 
 
 async def _cleanup_reconciled_prs(
+    run: GithubRun,
     *,
-    context: CommandContext,
-    dry_run: bool,
     finish_results: tuple[PRFinishResult, ...],
-    github: GithubClient,
     remaining_prs: dict[ChangeId, GithubPR],
     dependencies: dict[ChangeId, tuple[LocalCommit, ...]],
-    target: GithubTarget,
 ) -> int:
     cleanup_change_ids: list[ChangeId] = []
     for result in finish_results:
@@ -408,7 +359,7 @@ async def _cleanup_reconciled_prs(
             recovery = t"run {ui.join(ui.cmd, recovery_commands)}"
             pr_label = format_pr_label(
                 result.candidate.pr_identity.pr_number,
-                repo=target.repo,
+                repo=run.target.repo,
             )
             console.output(
                 t"  ! kept the saved link and PR branch for {pr_label} "
@@ -418,11 +369,8 @@ async def _cleanup_reconciled_prs(
             continue
         cleanup_change_ids.append(result.change_id)
     blocked = await cleanup_tracked_prs(
+        run,
         change_ids=tuple(cleanup_change_ids),
-        context=context,
-        dry_run=dry_run,
-        github_client=github,
-        github_target=target,
         planned_detached_dependents=frozenset(pr.number for pr in remaining_prs.values()),
         planned_local_removals=frozenset(cleanup_change_ids),
     )
