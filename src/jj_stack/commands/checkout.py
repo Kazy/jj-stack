@@ -41,7 +41,12 @@ from jj_stack.errors import CliError, UsageError
 from jj_stack.formatting import format_pr_label
 from jj_stack.github.client import GithubClient, GithubClientError
 from jj_stack.github.error_messages import observe_github_repo
-from jj_stack.github.pr_refs import load_pr, parse_repo_pr_reference, require_managed_pr_head
+from jj_stack.github.pr_refs import (
+    load_pr,
+    managed_pr_head_problem,
+    parse_repo_pr_reference,
+    require_managed_pr_head,
+)
 from jj_stack.github.resolution import (
     GithubRepoAddress,
     require_github_repo,
@@ -537,7 +542,7 @@ def _picker_choices(
             pr_label = format_pr_label(missing, repo=repo)
             raise CliError(t"GitHub stack #{stack.number} refers to missing {pr_label}.")
         resolved = tuple(member for member in members if member is not None)
-        if not all(_picker_pr_is_adoptable(member, repo) for member in resolved):
+        if any(managed_pr_head_problem(member, repo) is not None for member in resolved):
             continue
         bottom = resolved[0]
         top = next(member for member in reversed(resolved) if member.number in active_numbers)
@@ -591,12 +596,3 @@ def _picker_choices(
             )
         )
     return tuple(choices)
-
-
-def _picker_pr_is_adoptable(
-    pr: GithubPR,
-    repo: GithubRepoAddress,
-) -> bool:
-    return current_pr_branch_namespace().contains(pr.head.ref) and (
-        pr.head.label == f"{repo.owner}:{pr.head.ref}"
-    )

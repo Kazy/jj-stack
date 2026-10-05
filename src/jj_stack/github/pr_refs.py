@@ -25,23 +25,30 @@ async def load_pr(*, github_client: GithubClient, pr_number: int) -> GithubPR:
         raise CliError(t"Could not load pull request {pr_label}") from error
 
 
-def require_managed_pr_head(*, pr: GithubPR, repo: GithubRepoAddress) -> CommitId:
-    """Return the head commit of a PR owned by this repo and branch namespace."""
+def managed_pr_head_problem(pr: GithubPR, repo: GithubRepoAddress) -> ui.Message | None:
+    """Explain why a PR's head is not owned by this repo and branch namespace, if it is not."""
 
     namespace = current_pr_branch_namespace()
-    expected_label = f"{repo.owner}:{pr.head.ref}"
     pr_number_label = format_pr_number(pr.number, url=pr.html_url)
-    if pr.head.label != expected_label:
-        raise CliError(
+    if pr.head.label != f"{repo.owner}:{pr.head.ref}":
+        return (
             t"Pull request {pr_number_label}'s head branch "
             t"{ui.bookmark(pr.head.label or pr.head.ref)} does not belong to {repo.full_name}."
         )
     if not namespace.contains(pr.head.ref):
-        raise CliError(
+        return (
             t"Pull request {pr_number_label}'s head branch "
             t"{ui.bookmark(pr.head.ref)} is not a jj-stack PR branch; its name does not start "
             t"with {ui.bookmark(namespace.branch_prefix)}."
         )
+    return None
+
+
+def require_managed_pr_head(*, pr: GithubPR, repo: GithubRepoAddress) -> CommitId:
+    """Return the head commit of a PR owned by this repo and branch namespace."""
+
+    if (problem := managed_pr_head_problem(pr, repo)) is not None:
+        raise CliError(problem)
     return pr.head.sha
 
 
