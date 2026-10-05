@@ -39,7 +39,7 @@ from jj_stack.stack.trunk_evidence import CommitAncestry
 
 
 class CheckedOutMergedChangeError(CliError):
-    def __init__(self, message, *, workspaces: tuple[str, ...]) -> None:
+    def __init__(self, message: ui.Message, *, workspaces: tuple[str, ...]) -> None:
         super().__init__(message)
         self.workspaces = workspaces
 
@@ -133,19 +133,13 @@ def build_selected_convergence_plan(
                 t"{ui.cmd('jj-stack sync <head-change-id>')} for a stack that still has "
                 t"submitted changes, or {ui.cmd('jj-stack cleanup')} if none remains.",
             )
-        pr = observation.prs[change.change_id].pr
+        pr = change_state.pr
         on_trunk.append(
             OnTrunkChange(
                 change_id=change.change_id,
                 candidate=candidate,
                 evidence_kind=evidence_kind,
-                close_pr=(
-                    pr
-                    if evidence_kind == "exact"
-                    and isinstance(pr, GithubPR)
-                    and pr.state == "open"
-                    else None
-                ),
+                close_pr=pr if evidence_kind == "exact" and pr.state == "open" else None,
                 change=change,
             )
         )
@@ -214,7 +208,7 @@ def _member_state(
     observation: RepoFacts,
     rerun: str,
     member: GithubStackPR | None = None,
-    selected: LocalCommit | None = None,
+    selected: LocalCommit | None,
 ) -> WithPR:
     """Classify one tracked change with its trunk evidence, stopping on a broken saved link."""
 
