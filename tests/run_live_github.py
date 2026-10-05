@@ -60,7 +60,7 @@ def _run(
     cwd: Path = REPO_ROOT,
     capture: bool = False,
     expected: tuple[int, ...] = (0,),
-    max_seconds: float = DEFAULT_COMMAND_TIMEOUT_SECONDS,
+    max_seconds: float,
 ) -> subprocess.CompletedProcess[str]:
     timeout = max_seconds
     if deadline is not None:
