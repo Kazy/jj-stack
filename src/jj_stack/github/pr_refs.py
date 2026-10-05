@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from urllib.parse import urlparse
 
 import jj_stack.ui as ui
@@ -16,13 +15,6 @@ from jj_stack.models.github import GithubPR
 from jj_stack.pr_branch_namespace import current_pr_branch_namespace
 
 _PR_URL_RE = re.compile(r"^/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<number>[0-9]+)/?$")
-
-
-@dataclass(frozen=True, slots=True)
-class ParsedPRUrl:
-    number: int
-    owner: str
-    repo: str
 
 
 async def load_pr(*, github_client: GithubClient, pr_number: int) -> GithubPR:
@@ -59,20 +51,6 @@ def parse_pr_number(reference: str) -> int | None:
     return None
 
 
-def parse_pr_url(reference: str) -> ParsedPRUrl | None:
-    parsed = urlparse(reference)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        return None
-    match = _PR_URL_RE.fullmatch(parsed.path)
-    if match is None:
-        return None
-    return ParsedPRUrl(
-        number=int(match.group("number")),
-        owner=match.group("owner"),
-        repo=match.group("repo"),
-    )
-
-
 def parse_repo_pr_reference(
     *,
     github_repo: GithubRepoAddress,
@@ -84,8 +62,13 @@ def parse_repo_pr_reference(
     if parsed is not None:
         return parsed
 
-    pr_url = parse_pr_url(reference)
-    if pr_url is None:
+    url = urlparse(reference)
+    match = (
+        _PR_URL_RE.fullmatch(url.path)
+        if url.scheme in {"http", "https"} and url.hostname
+        else None
+    )
+    if match is None:
         raise UsageError(
             invalid_reference_message
             or (
@@ -93,7 +76,7 @@ def parse_repo_pr_reference(
                 f"or URL for {github_repo.full_name}."
             )
         )
-    if pr_url.owner != github_repo.owner or pr_url.repo != github_repo.repo:
+    if (match["owner"], match["repo"]) != (github_repo.owner, github_repo.repo):
         raise UsageError(
             wrong_repo_message
             or (
@@ -101,4 +84,4 @@ def parse_repo_pr_reference(
                 f"{github_repo.full_name}."
             )
         )
-    return pr_url.number
+    return int(match["number"])

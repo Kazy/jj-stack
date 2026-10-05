@@ -91,9 +91,4 @@ def resolve_pr_reference(
             t"use a pull request number or fix the selected remote."
         )
 
-    return (
-        pr_number
-        if pr_number is not None
-        else parse_repo_pr_reference(reference=pr_reference, github_repo=github_repo),
-        github_repo,
-    )
+    return parse_repo_pr_reference(reference=pr_reference, github_repo=github_repo), github_repo
