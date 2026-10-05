@@ -41,6 +41,10 @@ test *args='-n auto': setup
 complexity:
     uv run tools/check_complexity.py
 
+# Report unreferenced code; pass `src` to also report production code that only tests use.
+dead-code *paths='src tests tools':
+    uv run vulture {{paths}}
+
 # Run generated client and server command sequences; arguments pass through to the runner.
 [positional-arguments]
 property *args:

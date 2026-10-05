@@ -49,6 +49,7 @@ dev = [
   "pytest-xdist>=3.8.0,<4",
   "pytest>=9.1.1,<10",
   "ruff>=0.16.4,<0.17",
+  "vulture>=2.14,<3",
 ]
 ty = [
   "ty>=0.0.70,<0.1",
@@ -99,3 +100,31 @@ packages = ["src/jj_stack"]
 exclude-newer = "7 days"
 exclude-newer-package = { fastapi = false, ruff = false }
 default-groups = ["dev"]
+
+# `just dead-code` reports names nothing references. These are called by frameworks instead.
+[tool.vulture]
+ignore_decorators = [
+  "@app.*",
+  "@field_validator",
+  "@invariant",
+  "@model_validator",
+  "@precondition",
+  "@pytest.fixture",
+  "@rule",
+]
+ignore_names = [
+  "capture_output",
+  "exc",
+  "exc_type",
+  "model_config",
+  "nextitem",
+  "pytest_*",
+  "pytestmark",
+  "return_value",
+  "session",
+  "side_effect",
+  "tb",
+  "test_*",
+  "Test*",
+  "traceback",
+]

@@ -62,6 +62,11 @@ Check how queries and algorithms grow with stack and repo size.
 Look for dead code, duplicated logic, policy in adapters or rendering, vague names, and forwarding
 layers that add no useful separation. Validation should serve a demonstrated need.
 
+`just dead-code` lists unreferenced functions, classes, and variables, and `just dead-code src`
+also lists production code that only tests use. It matches by name, so it misses unused
+parameters and defaults. Removing dead code can leave more behind, so repeat until it reports
+nothing. Add names that frameworks call to `[tool.vulture]` in `pyproject.toml`.
+
 Use precise types in domain APIs. Dynamic types and casts can be necessary at argument parsing,
 async protocols, or untrusted-JSON boundaries; narrow them there. Flag `Any`, `object`, `cast`, or
 `getattr` when they hide a missing model or spread into domain logic.
