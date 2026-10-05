@@ -141,7 +141,6 @@ class SubmitSelection:
 
     explicit_base: ExplicitBase | None
     is_maximal_path: bool
-    remote: GitRemote
     stack: LocalStack
 
 

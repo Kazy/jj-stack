@@ -5,7 +5,6 @@ from __future__ import annotations
 import jj_stack.ui as ui
 from jj_stack.bootstrap import CommandContext
 from jj_stack.errors import CliError, ConflictedStackError, UsageError
-from jj_stack.github.resolution import select_submit_remote
 from jj_stack.identifiers import ChangeId, short_change_id
 from jj_stack.jj.client import JjClient
 from jj_stack.models.git import GitRemote
@@ -29,7 +28,6 @@ def select_submit_inputs(
     """Load local submit state before any GitHub mutation begins."""
 
     client = context.jj_client
-    remote = select_submit_remote(client.list_git_remotes())
     path = select_stack_path(
         jj_client=client,
         revset=options.revset,
@@ -75,7 +73,6 @@ def select_submit_inputs(
     preflight_publication_stack(client, stack)
     return SubmitSelection(
         stack=stack,
-        remote=remote,
         is_maximal_path=path.is_maximal,
         explicit_base=explicit_base,
     )

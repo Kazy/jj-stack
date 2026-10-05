@@ -320,6 +320,7 @@ async def run_submit_async(
                 github_client=github_client,
                 options=options,
                 print_selected=print_selected,
+                remote=remote,
             )
             if observed is None:
                 return
@@ -360,6 +361,7 @@ async def run_submit_async(
                     github_client=github_client,
                     options=options,
                     print_selected=print_selected,
+                    remote=remote,
                 )
             except CliError as error:
                 if generated_edit_path is not None:
@@ -427,6 +429,7 @@ async def _observe_submit(
     github_client: GithubClient,
     options: SubmitOptions,
     print_selected: bool,
+    remote: GitRemote,
 ) -> _SubmitObservation | None:
     """Observe the selected stack and its GitHub state; None when nothing is selected."""
 
@@ -438,7 +441,6 @@ async def _observe_submit(
             state=state,
         )
     client = context.jj_client
-    remote = selection.remote
     stack = selection.stack
     explicit_base = selection.explicit_base
     base_branch = explicit_base.branch if explicit_base is not None else None
