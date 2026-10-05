@@ -56,6 +56,7 @@ ColorMode = Literal["auto", "always", "never"]
 RequestedColorMode = Literal["always", "auto", "debug", "never"]
 OutputFormat = Literal["text", "jsonl"]
 StyleArg = Style | str
+_NO_STYLES = SemanticStyles(())
 type ConsoleObject = ui.Renderable | ConsoleRenderable | RichCast
 
 
@@ -274,16 +275,12 @@ def _raw_console(stream: IO[str], *, color_mode: ColorMode) -> Console:
 def _build_console(
     console: Console,
     *,
-    semantic_styles: SemanticStyles | None,
+    semantic_styles: SemanticStyles,
     time_output: bool,
 ) -> _ConfiguredConsole:
     return _ConfiguredConsole(
         console,
-        prefix_style=(
-            None
-            if semantic_styles is None
-            else semantic_styles.for_labels(("prefix", "timestamp"))
-        ),
+        prefix_style=semantic_styles.for_labels(("prefix", "timestamp")),
         start=jj_stack.PROCESS_START if time_output else None,
     )
 
@@ -291,15 +288,15 @@ def _build_console(
 def _build_consoles(
     *,
     color_mode: ColorMode = "auto",
-    semantic_styles: SemanticStyles | None = None,
+    semantic_styles: SemanticStyles = _NO_STYLES,
     stderr: IO[str] | None = None,
     stdout: IO[str] | None = None,
     time_output: bool = False,
-) -> tuple[_ConfiguredConsole, _ConfiguredConsole, SemanticStyles | None]:
+) -> tuple[_ConfiguredConsole, _ConfiguredConsole, SemanticStyles]:
     stdout_console = _raw_console(sys.stdout if stdout is None else stdout, color_mode=color_mode)
     stderr_console = _raw_console(sys.stderr if stderr is None else stderr, color_mode=color_mode)
     if color_mode == "never":
-        semantic_styles = None
+        semantic_styles = _NO_STYLES
     return (
         _build_console(
             stdout_console,
@@ -317,7 +314,7 @@ def _build_consoles(
 
 _STDOUT_CONSOLE: _ConfiguredConsole
 _STDERR_CONSOLE: _ConfiguredConsole
-_SEMANTIC_STYLES: SemanticStyles | None
+_SEMANTIC_STYLES: SemanticStyles
 _EFFECTIVE_COLOR: RequestedColorMode | None = None
 _STDOUT_STREAM: IO[str] = sys.stdout
 _STDERR_STREAM: IO[str] = sys.stderr
@@ -339,7 +336,7 @@ def rich_color_mode(color_mode: RequestedColorMode | None) -> ColorMode:
 def configured_console(
     *,
     color: RequestedColorMode | None = None,
-    semantic_styles: SemanticStyles | None = None,
+    semantic_styles: SemanticStyles = _NO_STYLES,
     stderr: IO[str] | None = None,
     stdout: IO[str] | None = None,
     time_output: bool = False,
@@ -426,8 +423,6 @@ def color_when(*, stdout_is_tty: bool) -> JjColorWhen:
 def semantic_style(*labels: str) -> Style | None:
     """Resolve jj semantic color labels into the active Rich style."""
 
-    if _SEMANTIC_STYLES is None:
-        return None
     return _SEMANTIC_STYLES.for_labels(labels)
 
 

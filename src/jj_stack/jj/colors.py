@@ -68,7 +68,7 @@ class SemanticStyles:
         return style, frozenset(matched_labels)
 
 
-def semantic_styles(colors: Mapping[str, object]) -> SemanticStyles | None:
+def semantic_styles(colors: Mapping[str, object]) -> SemanticStyles:
     """Build Rich styles from jj's resolved `colors` table.
 
     Each entry maps a label name such as `"diff added"` to either a color name or a table of
@@ -98,7 +98,7 @@ def semantic_styles(colors: Mapping[str, object]) -> SemanticStyles | None:
     rules = tuple(
         _SemanticStyleRule(labels=labels, style=style) for labels, style in grouped_styles.items()
     )
-    return SemanticStyles(rules) if rules else None
+    return SemanticStyles(rules)
 
 
 def _style_from_config_value(attribute: str | None, value: object) -> Style | None:

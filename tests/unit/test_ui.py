@@ -12,7 +12,7 @@ import jj_stack.ui as ui_module
 from jj_stack.jj.colors import SemanticStyles, semantic_styles
 
 
-def _theme(listing: str) -> SemanticStyles | None:
+def _theme(listing: str) -> SemanticStyles:
     """Build the jj theme from lines shaped like `jj config list colors` output."""
 
     return semantic_styles(tomllib.loads(listing).get("colors", {}))
