@@ -306,11 +306,6 @@ class _GraphqlRef(_GraphqlRefTarget):
     prefix: str
 
 
-class _GraphqlIssueCommentConnection(BaseModel):
-    nodes: tuple[GithubIssueComment | None, ...] | None = None
-    page_info: _GraphqlPageInfo = Field(alias="pageInfo")
-
-
 class _GraphqlForcePushEvent(BaseModel):
     after_commit: _GraphqlGitObject | None = Field(default=None, alias="afterCommit")
     before_commit: _GraphqlGitObject | None = Field(default=None, alias="beforeCommit")
@@ -322,7 +317,7 @@ class _GraphqlTimelineItemConnection(BaseModel):
 
 
 class _GraphqlPRHistory(BaseModel):
-    comments: _GraphqlIssueCommentConnection | None = None
+    comments: _GraphqlConnection[GithubIssueComment] | None = None
     timeline_items: _GraphqlTimelineItemConnection | None = Field(
         default=None,
         alias="timelineItems",
@@ -1830,7 +1825,7 @@ def _issue_comments_from_graphql(
     comments = history.comments if history is not None else None
     if comments is None:
         return (), None
-    valid_comments = tuple(comment for comment in comments.nodes or () if comment is not None)
+    valid_comments = tuple(comment for comment in comments.nodes if comment is not None)
     return valid_comments, comments.page_info.next_cursor
 
 
