@@ -62,7 +62,7 @@ def test_main_preserves_partial_handler_output_on_keyboard_interrupt(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    def fake_view(*, as_json, cli_args, debug, repo, selectors, verbose) -> int:
+    def fake_view(*, as_json, global_options, selectors, verbose) -> int:
         print("before interrupt")
         raise KeyboardInterrupt()
 

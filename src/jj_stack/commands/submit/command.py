@@ -30,7 +30,7 @@ from pathlib import Path
 
 import jj_stack.console as console
 import jj_stack.ui as ui
-from jj_stack.bootstrap import CommandContext, bootstrap_context
+from jj_stack.bootstrap import CommandContext, GlobalOptions, bootstrap_context
 from jj_stack.concurrency import wait_for_read_tasks
 from jj_stack.config import parse_comma_separated_flag_values
 from jj_stack.errors import CliError
@@ -38,7 +38,6 @@ from jj_stack.github.client import GithubClient
 from jj_stack.github.error_messages import observe_github_repo, read_or_stop
 from jj_stack.github.resolution import require_github_repo, select_submit_remote
 from jj_stack.identifiers import ChangeId, CommitId, short_change_id
-from jj_stack.jj.cli_args import JjCliArgs
 from jj_stack.jj.client import JjClient
 from jj_stack.models.git import GitRemote
 from jj_stack.models.github import GithubPR, GithubStack
@@ -110,9 +109,8 @@ object with string `title` and `body` fields.
 
 def submit(
     *,
+    global_options: GlobalOptions,
     base: str | None,
-    cli_args: JjCliArgs,
-    debug: bool,
     descriptions: Sequence[str] | None,
     describe_with: str | None,
     draft: bool,
@@ -122,18 +120,13 @@ def submit(
     labels: Sequence[str] | None,
     open_: bool,
     re_request: bool,
-    repo: Path | None,
     reviewers: Sequence[str] | None,
     revset: str | None,
     team_reviewers: Sequence[str] | None,
 ) -> int:
     """CLI entrypoint for `submit`."""
 
-    context = bootstrap_context(
-        repo=repo,
-        cli_args=cli_args,
-        debug=debug,
-    )
+    context = bootstrap_context(global_options)
     options = SubmitOptions(
         base_revset=base,
         descriptions=tuple(descriptions or ()),

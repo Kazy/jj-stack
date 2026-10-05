@@ -26,11 +26,10 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from pathlib import Path
 
 import jj_stack.console as console
 import jj_stack.ui as ui
-from jj_stack.bootstrap import CommandContext, bootstrap_context
+from jj_stack.bootstrap import CommandContext, GlobalOptions, bootstrap_context
 from jj_stack.errors import CliError
 from jj_stack.formatting import format_pr_label, format_pr_number
 from jj_stack.github.client import GithubClient
@@ -41,7 +40,6 @@ from jj_stack.github.resolution import (
     select_submit_remote,
 )
 from jj_stack.identifiers import ChangeId, CommitId, short_change_id
-from jj_stack.jj.cli_args import JjCliArgs
 from jj_stack.models.github import GithubPR
 from jj_stack.models.tracking import PRIdentity, SubmittedBaseline, TrackedPR
 from jj_stack.pr_branch_namespace import pr_branch_matches_change
@@ -73,16 +71,14 @@ class RelinkResult:
 
 def relink(
     *,
-    cli_args: JjCliArgs,
-    debug: bool,
+    global_options: GlobalOptions,
     pr: str,
-    repo: Path | None,
     replace_remote: bool,
     revset: str,
 ) -> int:
     """CLI entrypoint for `relink`."""
 
-    context = bootstrap_context(repo=repo, cli_args=cli_args, debug=debug)
+    context = bootstrap_context(global_options)
     with operation_lock(context.state_store, command="relink"):
         result = asyncio.run(
             _run_relink_async(

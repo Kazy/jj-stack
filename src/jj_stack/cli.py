@@ -716,7 +716,8 @@ def _help_handler(args: Namespace) -> int:
         return 0
     # Help skips repo bootstrap, but still uses jj's theme when configuration is readable.
     with suppress(CliError, OSError):
-        settings = read_jj_settings(cwd=args.repo or Path.cwd(), cli_args=args.cli_args)
+        options = args.global_options
+        settings = read_jj_settings(cwd=options.repo or Path.cwd(), cli_args=options.cli_args)
         console.adopt_jj_config(
             color=settings.string("ui", "color"), colors=settings.table("colors")
         )
@@ -825,7 +826,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except CliError as error:
         _print_early_cli_error(error, normalized_argv=normalized_argv)
         return resolve_exit_code(error)
-    args.cli_args = cli_args
+    args.global_options = bootstrap.GlobalOptions(
+        repo=args.repo, cli_args=cli_args, debug=args.debug
+    )
     effective_color = (
         "never" if args.command == "in-use" or args.output == "jsonl" else args.color
     )
@@ -867,11 +870,9 @@ def _default_view_handler(args: Namespace) -> int:
     """Run bare `jj-stack` as the default `view` command."""
 
     return view_command.view(
-        cli_args=args.cli_args,
-        debug=args.debug,
+        global_options=args.global_options,
         as_json=False,
         ignore_working_copy=False,
-        repo=args.repo,
         selectors=(),
         verbose=False,
     )

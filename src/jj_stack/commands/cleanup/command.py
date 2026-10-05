@@ -23,11 +23,10 @@ import asyncio
 from collections.abc import Callable, Iterable, Mapping
 from contextlib import nullcontext
 from dataclasses import dataclass, replace
-from pathlib import Path
 
 import jj_stack.console as console
 import jj_stack.ui as ui
-from jj_stack.bootstrap import CommandContext, bootstrap_context
+from jj_stack.bootstrap import CommandContext, GlobalOptions, bootstrap_context
 from jj_stack.commands.cleanup.actions import (
     UNTRUSTED_PR_STATES,
     CleanupAction,
@@ -51,7 +50,6 @@ from jj_stack.github.error_messages import remote_and_github_unavailable_message
 from jj_stack.github.overview_comments import STACK_OVERVIEW_COMMENT_MARKER
 from jj_stack.github.resolution import GithubTarget, UnresolvedGithubTarget, resolve_github_target
 from jj_stack.identifiers import ChangeId, short_change_id
-from jj_stack.jj.cli_args import JjCliArgs
 from jj_stack.jj.client import PRRefUpdate
 from jj_stack.models.git import GitRemote
 from jj_stack.models.github import GithubIssueComment, GithubPR, GithubStack
@@ -98,12 +96,10 @@ type CleanupPreflight = PRCleanup | CleanupAction | None
 
 def cleanup(
     *,
-    cli_args: JjCliArgs,
+    global_options: GlobalOptions,
     close: bool,
-    debug: bool,
     dry_run: bool,
     pr: str | None,
-    repo: Path | None,
     revset: str | None,
 ) -> int:
     """CLI entrypoint for `cleanup`."""
@@ -113,11 +109,7 @@ def cleanup(
     if close and pr is None:
         raise UsageError("jj-stack cleanup --close requires --pull-request.")
 
-    context = bootstrap_context(
-        repo=repo,
-        cli_args=cli_args,
-        debug=debug,
-    )
+    context = bootstrap_context(global_options)
     with operation_lock(
         context.state_store,
         command="cleanup",

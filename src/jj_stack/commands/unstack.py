@@ -14,18 +14,16 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from pathlib import Path
 
 import jj_stack.console as console
 import jj_stack.ui as ui
-from jj_stack.bootstrap import CommandContext, bootstrap_context
+from jj_stack.bootstrap import CommandContext, GlobalOptions, bootstrap_context
 from jj_stack.commands.cleanup.actions import UNTRUSTED_PR_STATES
 from jj_stack.errors import CliError, UsageError
 from jj_stack.github.client import GithubClient, GithubClientError
 from jj_stack.github.error_messages import require_github_target
 from jj_stack.github.resolution import resolve_github_target
 from jj_stack.identifiers import ChangeId, short_change_id
-from jj_stack.jj.cli_args import JjCliArgs
 from jj_stack.models.github import GithubStack
 from jj_stack.models.stack import LocalStack
 from jj_stack.models.tracking import TrackingState
@@ -63,12 +61,10 @@ class LocalUnstackResult:
 
 def unstack(
     *,
-    cli_args: JjCliArgs,
-    debug: bool,
+    global_options: GlobalOptions,
     dry_run: bool,
     local: bool,
     pr: str | None,
-    repo: Path | None,
     revset: str | None,
     stack: int | None,
 ) -> int:
@@ -82,11 +78,7 @@ def unstack(
     if stack is not None and stack < 1:
         raise UsageError("jj-stack unstack --stack requires a positive GitHub stack number.")
 
-    context = bootstrap_context(
-        repo=repo,
-        cli_args=cli_args,
-        debug=debug,
-    )
+    context = bootstrap_context(global_options)
     command = "unstack --local" if local else "unstack"
     with operation_lock(
         context.state_store,

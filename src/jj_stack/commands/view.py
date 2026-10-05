@@ -25,14 +25,13 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Literal
 
 from rich.text import Text
 
 import jj_stack.console as console
 import jj_stack.ui as ui
-from jj_stack.bootstrap import CommandContext, bootstrap_context
+from jj_stack.bootstrap import CommandContext, GlobalOptions, bootstrap_context
 from jj_stack.commands._json_status import stack_change_json
 from jj_stack.commands.view_details import (
     merge_details_hint,
@@ -47,7 +46,6 @@ from jj_stack.formatting import (
 from jj_stack.github.error_messages import remote_and_github_unavailable_messages
 from jj_stack.github.resolution import GithubRepoAddress
 from jj_stack.identifiers import CommitId, is_change_id_prefix, short_change_id
-from jj_stack.jj.cli_args import JjCliArgs
 from jj_stack.jj.client import (
     JjCommandError,
     divergent_change_id_from_error,
@@ -90,22 +88,15 @@ class ViewSelector:
 
 def view(
     *,
+    global_options: GlobalOptions,
     as_json: bool,
-    cli_args: JjCliArgs,
-    debug: bool,
     ignore_working_copy: bool,
-    repo: Path | None,
     selectors: tuple[ViewSelector, ...],
     verbose: bool,
 ) -> int:
     """CLI entrypoint for `view`."""
 
-    context = bootstrap_context(
-        repo=repo,
-        cli_args=cli_args,
-        debug=debug,
-        snapshot_working_copy=not ignore_working_copy,
-    )
+    context = bootstrap_context(global_options, snapshot_working_copy=not ignore_working_copy)
     return _run_status(
         context=context,
         selectors=selectors,

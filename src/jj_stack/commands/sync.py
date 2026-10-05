@@ -28,11 +28,10 @@ from __future__ import annotations
 import asyncio
 import shlex
 import sys
-from pathlib import Path
 
 import jj_stack.console as console
 import jj_stack.ui as ui
-from jj_stack.bootstrap import CommandContext, bootstrap_context
+from jj_stack.bootstrap import CommandContext, GlobalOptions, bootstrap_context
 from jj_stack.commands.cleanup.command import (
     cleanup_stack_without_local_copies,
     cleanup_tracked_prs,
@@ -55,7 +54,6 @@ from jj_stack.github.resolution import (
     resolve_github_target,
 )
 from jj_stack.identifiers import ChangeId, CommitId, is_change_id_prefix
-from jj_stack.jj.cli_args import JjCliArgs
 from jj_stack.jj.client import quote_revset_symbol
 from jj_stack.models.github import GithubRepo
 from jj_stack.stack.convergence import (
@@ -90,17 +88,15 @@ HELP = "Update a local stack after GitHub merges or rebases it"
 
 def sync(
     *,
+    global_options: GlobalOptions,
     all_: bool,
-    cli_args: JjCliArgs,
-    debug: bool,
     dry_run: bool,
     pr: str | None,
-    repo: Path | None,
     revset: str | None,
 ) -> int:
     if sum((all_, pr is not None, revset is not None)) > 1:
         raise UsageError("Use only one of sync --all, --pull-request, or a revset.")
-    context = bootstrap_context(repo=repo, cli_args=cli_args, debug=debug)
+    context = bootstrap_context(global_options)
     with operation_lock(
         context.state_store,
         command="sync --all" if all_ else "sync",

@@ -9,6 +9,7 @@ import pytest
 
 import jj_stack.commands.view as view_module
 import jj_stack.console as console_module
+from jj_stack.bootstrap import GlobalOptions
 from jj_stack.errors import EXIT_INCOMPLETE, CliError
 from jj_stack.github.client import GithubClient
 from jj_stack.github.resolution import GithubRepoAddress, GithubTarget
@@ -104,7 +105,7 @@ def test_view_shares_pr_observation_without_losing_selector_order(
         prs[2].head.ref: (prs[2],),
     }
     github.get_prs_by_numbers.return_value = {1: prs[0]}
-    monkeypatch.setattr(view_module, "bootstrap_context", lambda **_kwargs: context)
+    monkeypatch.setattr(view_module, "bootstrap_context", lambda *_args, **_kwargs: context)
     monkeypatch.setattr(view_module, "prepare_local_stack", prepare_stack)
     monkeypatch.setattr("jj_stack.bootstrap.build_github_client", lambda **_kwargs: github)
 
@@ -113,10 +114,8 @@ def test_view_shares_pr_observation_without_losing_selector_order(
     with console_module.configured_console(stdout=stdout, stderr=stderr, color="never"):
         exit_code = view_module.view(
             as_json=True,
-            cli_args=JjCliArgs(),
-            debug=False,
+            global_options=GlobalOptions(repo=None, cli_args=JjCliArgs(), debug=False),
             ignore_working_copy=False,
-            repo=tmp_path,
             selectors=tuple(
                 view_module.ViewSelector(kind="revset", value=value)
                 for value in ("left", "bad", "duplicate", "right")
@@ -175,17 +174,15 @@ def test_view_keeps_selector_errors_between_their_neighboring_reports(
             state=TrackingState(),
         )
 
-    monkeypatch.setattr(view_module, "bootstrap_context", lambda **_kwargs: context)
+    monkeypatch.setattr(view_module, "bootstrap_context", lambda *_args, **_kwargs: context)
     monkeypatch.setattr(view_module, "prepare_local_stack", prepare_stack)
 
     output = StringIO()
     with console_module.configured_console(stdout=output, stderr=output, color="never"):
         exit_code = view_module.view(
             as_json=False,
-            cli_args=JjCliArgs(),
-            debug=False,
+            global_options=GlobalOptions(repo=None, cli_args=JjCliArgs(), debug=False),
             ignore_working_copy=False,
-            repo=tmp_path,
             selectors=tuple(
                 view_module.ViewSelector(kind="revset", value=value)
                 for value in ("good", "bad", "later")

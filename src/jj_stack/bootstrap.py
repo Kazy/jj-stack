@@ -53,27 +53,32 @@ class CommandContext:
         return build_github_client(repo=repo, token=token)
 
 
+@dataclass(slots=True, frozen=True)
+class GlobalOptions:
+    """Command-line options that apply to every command."""
+
+    repo: Path | None
+    cli_args: JjCliArgs
+    debug: bool
+
+
 def bootstrap_context(
-    *,
-    repo: Path | None,
-    cli_args: JjCliArgs,
-    debug: bool,
-    snapshot_working_copy: bool = True,
+    options: GlobalOptions, *, snapshot_working_copy: bool = True
 ) -> CommandContext:
     """Resolve the repo, read jj's config once, and initialize the console and logging."""
 
-    repo = repo.resolve() if repo is not None else None
+    repo = options.repo.resolve() if options.repo is not None else None
     validate_repo_path(repo)
     check_jj_version()
     repo_root = resolve_repo_root(repo or Path.cwd())
-    settings = read_jj_settings(cwd=repo_root, cli_args=cli_args)
+    settings = read_jj_settings(cwd=repo_root, cli_args=options.cli_args)
     console.adopt_jj_config(color=settings.string("ui", "color"), colors=settings.table("colors"))
-    jj_client = JjClient(repo_root, cli_args=cli_args, settings=settings)
+    jj_client = JjClient(repo_root, cli_args=options.cli_args, settings=settings)
     config = load_config(settings=settings)
     install_pr_branch_namespace(config.branch_prefix)
     if snapshot_working_copy:
         jj_client.enable_initial_working_copy_snapshot()
-    configure_logging(debug=debug, configured_level=config.logging.level)
+    configure_logging(debug=options.debug, configured_level=config.logging.level)
     return CommandContext(
         config=config,
         jj_client=jj_client,

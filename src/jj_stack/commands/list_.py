@@ -21,11 +21,10 @@ from __future__ import annotations
 import sys
 from collections import Counter
 from dataclasses import dataclass, replace
-from pathlib import Path
 
 import jj_stack.console as console
 import jj_stack.ui as ui
-from jj_stack.bootstrap import CommandContext, bootstrap_context
+from jj_stack.bootstrap import CommandContext, GlobalOptions, bootstrap_context
 from jj_stack.commands._json_status import (
     saved_pr_json,
     stack_change_json,
@@ -41,7 +40,6 @@ from jj_stack.github.resolution import (
     resolve_github_target,
 )
 from jj_stack.identifiers import ChangeId, short_change_id
-from jj_stack.jj.cli_args import JjCliArgs
 from jj_stack.stack.change_state import (
     ChangeObservation,
     ChangeState,
@@ -84,20 +82,13 @@ _ORPHAN_SUBJECT = "local change missing"
 
 def list_(
     *,
+    global_options: GlobalOptions,
     as_json: bool,
-    cli_args: JjCliArgs,
-    debug: bool,
     ignore_working_copy: bool,
-    repo: Path | None,
 ) -> int:
     """CLI entrypoint for `list`."""
 
-    context = bootstrap_context(
-        repo=repo,
-        cli_args=cli_args,
-        debug=debug,
-        snapshot_working_copy=not ignore_working_copy,
-    )
+    context = bootstrap_context(global_options, snapshot_working_copy=not ignore_working_copy)
     return _run_list(
         as_json=as_json,
         context=context,

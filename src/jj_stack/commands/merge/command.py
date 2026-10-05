@@ -33,11 +33,10 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
 
 import jj_stack.console as console
 import jj_stack.ui as ui
-from jj_stack.bootstrap import CommandContext, bootstrap_context
+from jj_stack.bootstrap import CommandContext, GlobalOptions, bootstrap_context
 from jj_stack.commands.cleanup.command import cleanup_stack_without_local_copies
 from jj_stack.commands.sync import converge_selected_stack
 from jj_stack.concurrency import wait_for_read_tasks
@@ -52,7 +51,6 @@ from jj_stack.github.error_messages import (
 )
 from jj_stack.github.resolution import GithubTarget, resolve_github_target
 from jj_stack.identifiers import ChangeId, short_change_id
-from jj_stack.jj.cli_args import JjCliArgs
 from jj_stack.models.github import GithubRepo
 from jj_stack.models.stack import LocalCommit, LocalStack
 from jj_stack.models.tracking import TrackingState
@@ -92,20 +90,14 @@ class PreparedMerge:
 
 def merge(
     *,
-    cli_args: JjCliArgs,
-    debug: bool,
+    global_options: GlobalOptions,
     dry_run: bool,
     merge_method: MergeMethod | None,
     no_wait: bool,
     pr: str | None,
-    repo: Path | None,
     revset: str | None,
 ) -> int:
-    context = bootstrap_context(
-        repo=repo,
-        cli_args=cli_args,
-        debug=debug,
-    )
+    context = bootstrap_context(global_options)
     return asyncio.run(
         _run_merge(
             context=context,

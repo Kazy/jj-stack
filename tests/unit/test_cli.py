@@ -30,7 +30,7 @@ def test_main_renders_semantic_cli_errors_without_flattening_first(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    def fake_view(*, as_json, cli_args, debug, repo, selectors, verbose) -> int:
+    def fake_view(*, as_json, global_options, selectors, verbose) -> int:
         raise CliError(("Problem at ", ui.change_id("abcdefgh1234")))
 
     monkeypatch.setattr("jj_stack.cli.view_command.view", fake_view)
@@ -102,7 +102,7 @@ def test_main_preserves_view_selector_order_and_end_of_options(
 ) -> None:
     observed: dict[str, object] = {}
 
-    def fake_view(*, as_json, cli_args, debug, repo, selectors, verbose) -> int:
+    def fake_view(*, as_json, global_options, selectors, verbose) -> int:
         observed.update(selectors=selectors, verbose=verbose)
         return 0
 

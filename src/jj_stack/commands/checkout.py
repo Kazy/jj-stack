@@ -31,11 +31,10 @@ import sys
 from collections import Counter
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from pathlib import Path
 
 import jj_stack.console as console
 import jj_stack.ui as ui
-from jj_stack.bootstrap import CommandContext, bootstrap_context
+from jj_stack.bootstrap import CommandContext, GlobalOptions, bootstrap_context
 from jj_stack.concurrency import wait_for_read_tasks
 from jj_stack.errors import CliError, UsageError
 from jj_stack.formatting import format_pr_label
@@ -53,7 +52,6 @@ from jj_stack.github.resolution import (
     select_submit_remote,
 )
 from jj_stack.identifiers import ChangeId, CommitId, short_change_id
-from jj_stack.jj.cli_args import JjCliArgs
 from jj_stack.jj.client import JjClient
 from jj_stack.models.git import GitRemote
 from jj_stack.models.github import GithubPR, GithubStack
@@ -93,16 +91,14 @@ class CheckoutPickerChoice:
 
 def checkout(
     *,
-    cli_args: JjCliArgs,
-    debug: bool,
+    global_options: GlobalOptions,
     pick: bool,
     pr: str | None,
-    repo: Path | None,
     revset: str | None,
 ) -> int:
     """CLI entrypoint for `checkout`."""
 
-    context = bootstrap_context(repo=repo, cli_args=cli_args, debug=debug)
+    context = bootstrap_context(global_options)
     result = asyncio.run(_checkout_async(context=context, pick=pick, pr=pr, revset=revset))
     if result.fetched_tip_commit is not None:
         console.output(ui.PrefixedLine("Fetched PR head commit: ", result.fetched_tip_commit))

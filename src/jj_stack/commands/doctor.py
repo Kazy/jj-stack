@@ -17,11 +17,10 @@ from __future__ import annotations
 import asyncio
 import os
 from dataclasses import dataclass
-from pathlib import Path
 
 import jj_stack.console as console
 import jj_stack.ui as ui
-from jj_stack.bootstrap import CommandContext, bootstrap_context
+from jj_stack.bootstrap import CommandContext, GlobalOptions, bootstrap_context
 from jj_stack.errors import CliError, error_message
 from jj_stack.github import resolution
 from jj_stack.github.auth import github_token, github_token_from_env
@@ -35,7 +34,6 @@ from jj_stack.github.resolution import (
     select_submit_remote,
 )
 from jj_stack.github.stack_availability import github_stacks_unavailable_error
-from jj_stack.jj.cli_args import JjCliArgs
 from jj_stack.models.git import GitRemote
 from jj_stack.models.github import GithubRepo
 from jj_stack.pr_branch_namespace import current_pr_branch_namespace
@@ -59,17 +57,11 @@ _GITHUB_CHECKS = ("connectivity", "push access", "GitHub stacks", "trunk branch"
 
 def doctor(
     *,
-    cli_args: JjCliArgs,
-    debug: bool,
+    global_options: GlobalOptions,
     fix: bool,
-    repo: Path | None,
 ) -> int:
     """CLI entrypoint for `doctor`."""
-    context = bootstrap_context(
-        repo=repo,
-        cli_args=cli_args,
-        debug=debug,
-    )
+    context = bootstrap_context(global_options)
     with (
         operation_lock(
             context.state_store,
