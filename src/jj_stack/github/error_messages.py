@@ -24,19 +24,6 @@ def repo_lookup_reason(error: GithubClientError) -> str:
     return error.user_facing_reason()
 
 
-def repo_lookup_error(
-    error: GithubClientError,
-    *,
-    repo: str,
-    hint: Message | None = None,
-) -> CliError:
-    """Wrap a failed repo lookup; raise the result `from error`."""
-
-    if error.status_code == 404:
-        hint = REPO_NOT_FOUND_REASON
-    return CliError(("Could not inspect GitHub repo ", code(repo)), hint=hint)
-
-
 async def read_or_stop[T](
     read: Awaitable[T], *, message: Message, hint: Message | None = None
 ) -> T:
@@ -52,7 +39,10 @@ async def observe_github_repo(github: GithubClient, *, hint: Message | None = No
     try:
         return await github.get_repo()
     except GithubClientError as error:
-        raise repo_lookup_error(error, repo=github.repo.full_name, hint=hint) from error
+        if error.status_code == 404:
+            hint = REPO_NOT_FOUND_REASON
+        message = ("Could not inspect GitHub repo ", code(github.repo.full_name))
+        raise CliError(message, hint=hint) from error
 
 
 def remote_and_github_unavailable_messages(

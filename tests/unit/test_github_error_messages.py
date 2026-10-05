@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+
+import httpx2
 import pytest
 
 from jj_stack.errors import EXIT_GITHUB, CliError, resolve_exit_code
-from jj_stack.github.client import REPO_NOT_FOUND_REASON, GithubClientError
+from jj_stack.github.client import REPO_NOT_FOUND_REASON, GithubClient, GithubClientError
 from jj_stack.github.error_messages import (
-    repo_lookup_error,
+    observe_github_repo,
     repo_lookup_reason,
     require_github_target,
 )
@@ -25,16 +28,23 @@ def test_repo_lookup_treats_a_404_as_a_missing_or_hidden_repo() -> None:
     assert repo_lookup_reason(missing) == REPO_NOT_FOUND_REASON
     assert repo_lookup_reason(refused) == "request failed (GitHub 500)"
 
-    wrapped = repo_lookup_error(missing, repo="octo-org/repo", hint="rerun later")
+    def observe(status: int) -> CliError:
+        github = GithubClient(
+            httpx2.AsyncClient(
+                base_url="https://api.github.test",
+                transport=httpx2.MockTransport(lambda request: httpx2.Response(status)),
+            ),
+            repo=GithubRepoAddress(owner="octo-org", repo="repo"),
+        )
+        with pytest.raises(CliError) as raised:
+            asyncio.run(observe_github_repo(github, hint="rerun later"))
+        return raised.value
+
+    wrapped = observe(404)
     assert plain_text(wrapped.message) == "Could not inspect GitHub repo octo-org/repo"
     assert wrapped.hint == REPO_NOT_FOUND_REASON
-    assert repo_lookup_error(refused, repo="octo-org/repo", hint="rerun later").hint == (
-        "rerun later"
-    )
-    try:
-        raise wrapped from missing
-    except CliError as error:
-        assert resolve_exit_code(error) == EXIT_GITHUB
+    assert resolve_exit_code(wrapped) == EXIT_GITHUB
+    assert observe(500).hint == "rerun later"
 
 
 def test_require_github_target_reports_the_earliest_resolution_failure() -> None:
