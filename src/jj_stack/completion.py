@@ -20,7 +20,7 @@ class CompletionOption:
 
     flags: tuple[str, ...]
     takes_value: bool
-    value_kind: str = "none"
+    value_kind: str
 
 
 @dataclass(frozen=True)
@@ -30,7 +30,7 @@ class CompletionCommand:
     name: str
     visible: bool
     options: tuple[CompletionOption, ...]
-    positional_choices: tuple[str, ...] = ()
+    positional_choices: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -67,7 +67,7 @@ def emit_shell_completion(
     parser: ArgumentParser,
     shell: Shell,
     *,
-    jj_alias: str | None = None,
+    jj_alias: str | None,
 ) -> str:
     """Render a shell completion script for the requested shell."""
 
@@ -295,7 +295,7 @@ def _render_bash_completion(
     return script
 
 
-def _render_zsh_completion(spec: CompletionSpec, *, jj_alias: str | None = None) -> str:
+def _render_zsh_completion(spec: CompletionSpec, *, jj_alias: str | None) -> str:
     script = (
         "#compdef jj-stack\n"
         "\n"
@@ -366,7 +366,7 @@ compdef _jj_stack_jj_dispatch jj
 """
 
 
-def _render_fish_completion(spec: CompletionSpec, *, jj_alias: str | None = None) -> str:
+def _render_fish_completion(spec: CompletionSpec, *, jj_alias: str | None) -> str:
     lines = ["complete -c jj-stack -f"]
     top_level_condition = "__fish_use_subcommand"
     for option in spec.top_level_options:

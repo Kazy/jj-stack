@@ -845,7 +845,7 @@ class JjClient:
                 stderr=error.stderr,
             ) from error
 
-    def edit_commit(self, commit_id: CommitId, *, cli_args: JjCliArgs = _NO_CLI_ARGS) -> None:
+    def edit_commit(self, commit_id: CommitId, *, cli_args: JjCliArgs) -> None:
         """Edit the given commit in the current workspace.
 
         The caller's immutability revset stays in force: an edit rewrites nothing, so jj's check

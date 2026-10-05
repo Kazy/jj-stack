@@ -903,7 +903,7 @@ class GithubClient:
         self,
         *,
         pr_id: str,
-        base: str | None = None,
+        base: str | None,
         body: str | None = None,
         title: str | None = None,
     ) -> GithubPR:
@@ -1354,7 +1354,7 @@ def _merge_progress_fields() -> str:
 
 
 def _branch_targets_query(
-    branches: Sequence[str], *, include_pr_template: bool = False
+    branches: Sequence[str], *, include_pr_template: bool
 ) -> tuple[str, dict[str, str]]:
     variables: dict[str, str] = {}
     selections: list[str] = []
@@ -1389,7 +1389,7 @@ def _branch_targets_by_suffix_query(
     after_cursors: Sequence[str | None],
     branch_prefix: str,
     suffixes: Sequence[str],
-    include_pr_template: bool = False,
+    include_pr_template: bool,
 ) -> tuple[str, dict[str, str]]:
     variables: dict[str, str] = {"ref_prefix": f"refs/heads/{branch_prefix}"}
     selections: list[str] = []
