@@ -845,6 +845,8 @@ class FakeGithubRepo:
         expected_base = base_ref
         for pr_number in members:
             pr = self.prs[pr_number]
+            if pr.merged_at is not None:
+                continue
             original = original_heads[pr.head_ref]
             rewritten = self._replay_commit(
                 commit_id=original,

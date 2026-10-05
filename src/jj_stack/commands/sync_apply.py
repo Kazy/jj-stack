@@ -176,8 +176,6 @@ def _apply_local_convergence(
         if actions.on_trunk
         else ()
     )
-    if dry_run:
-        return _observe_removal_dependencies(context=context, actions=actions)
     if isinstance(plan, GithubStackMergePlan) and adopt and rewritten:
         top = rewritten[-1]
         replaced = tuple(item.local_change.commit_id for item in rewritten)
@@ -186,12 +184,11 @@ def _apply_local_convergence(
             remote=remote_name,
             branch=top.candidate.pr_identity.head_ref,
             expected_target=destination,
-            expected_change_id=top.change_id,
             expected_chain=tuple(
                 (
                     item.candidate.pr_identity.head_ref,
                     item.pr.head.sha,
-                    item.change_id,
+                    (None, item.change_id),
                 )
                 for item in rewritten
             ),
@@ -203,6 +200,19 @@ def _apply_local_convergence(
         destination = trunk_commit_id
         attachment = nullcontext()
     with attachment:
+        operation_id = (
+            _prepare_merge_stack_rewrite(
+                context=context, plan=plan, trunk_commit_id=trunk_commit_id
+            )
+            if isinstance(plan, GithubStackMergePlan) and replaced
+            else None
+        )
+        if dry_run:
+            return _observe_removal_dependencies(context=context, actions=actions)
+        if operation_id is not None:
+            context.jj_client.integrate_operation(operation_id)
+            rebased = ()
+            replaced = ()
         if rebased:
             context.jj_client.rebase_changes(
                 change_ids=tuple(change.change_id for change in rebased),
@@ -237,6 +247,24 @@ def _apply_local_convergence(
                 },
             )
     return dependencies
+
+
+def _prepare_merge_stack_rewrite(
+    *, context: CommandContext, plan: GithubStackMergePlan, trunk_commit_id: CommitId
+) -> str | None:
+    rewritten = plan.rewritten_changes
+    imported_ids = {
+        change.commit_id: change.change_id
+        for change in context.jj_client.query_commits_by_ids(
+            tuple(item.pr.head.sha for item in rewritten)
+        )
+    }
+    if all(imported_ids[item.pr.head.sha] == item.change_id for item in rewritten):
+        return None
+    _, operation_id = _verified_local_rebase(
+        context=context, plan=plan, trunk_commit_id=trunk_commit_id
+    )
+    return operation_id
 
 
 def _apply_github_stack_rebase(
@@ -298,7 +326,7 @@ def _apply_github_stack_rebase(
 def _verified_local_rebase(
     *,
     context: CommandContext,
-    plan: GithubStackRebasePlan,
+    plan: GithubStackRebasePlan | GithubStackMergePlan,
     trunk_commit_id: CommitId,
 ) -> tuple[dict[ChangeId, LocalCommit], str | None]:
     adopted = plan.rewritten_changes

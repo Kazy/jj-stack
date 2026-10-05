@@ -508,10 +508,12 @@ an arbitrary visible side copy. When trunk has no matching change ID, `sync` rem
 old local change without relabeling that commit.
 
 When GitHub merges part of a stack, each remaining PR is either rewritten from its submitted
-baseline or left at its submitted commit. `sync` uses the commits GitHub reports, rather than
-replaying equivalent diffs, only if every remaining local change is still at its baseline and
-GitHub rewrote every remaining PR. Otherwise it adopts none, rebases the remaining changes onto
-trunk, records GitHub's reported heads as their baselines, and republishes them. It accepts those
+baseline or left at its submitted commit. When every remaining local change is still at its
+baseline and GitHub rewrote every remaining PR, `sync` follows the rewritten chain. It uses commits
+with the original change IDs directly, and restores missing IDs after the content verification
+below. If a local change was edited or GitHub left a PR at its baseline, it adopts none, rebases
+the remaining changes onto trunk, records GitHub's reported heads as their baselines, and
+republishes them. It accepts those
 heads and bases only while a merged PR in the same GitHub stack matches its saved record and its
 merge result is on trunk. GitHub roots the rewritten PRs on trunk's tip at the time of the
 rewrite, which may be past the merge result, so the rewritten chain's base must be on trunk at or

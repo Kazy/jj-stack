@@ -912,7 +912,7 @@ def test_sync_stops_before_rebasing_when_a_survivor_pr_drifted(
     assert state_store.load() == state_before
 
 
-def test_sync_retries_stack_adoption_after_survivor_submit_fails(
+def test_sync_retries_id_restoration_after_a_partial_merge_and_native_rebase(
     tmp_path: Path,
     monkeypatch,
     capsys,
@@ -922,7 +922,14 @@ def test_sync_retries_stack_adoption_after_survivor_submit_fails(
     state_store = TrackingStore.for_repo(repo)
     on_trunk, survivor = selected_stack(repo).changes
     baseline_before = state_store.load().prs[survivor.change_id].submitted_baseline
-    remote_survivor = _simulate_stack_partial_merge(fake_repo)
+    _simulate_stack_partial_merge(fake_repo)
+    rebased_trunk = fake_repo.advance_branch(
+        "main", path="before-native-rebase.txt", contents="before GitHub rebases\n"
+    )
+    (remote_survivor,) = fake_repo.rebase_stack_onto_base(7, base_ref="main")
+    assert run_main(repo, config_path, "sync", "--dry-run", survivor.change_id) == 0
+    capsys.readouterr()
+    assert JjClient(repo).resolve_commit(survivor.change_id).commit_id == survivor.commit_id
     real_refresh = sync_apply.refresh_selected_prs
 
     async def fail_refresh(**_kwargs):
@@ -940,7 +947,10 @@ def test_sync_retries_stack_adoption_after_survivor_submit_fails(
         interrupted_state.prs[survivor.change_id].submitted_baseline.commit_id == remote_survivor
     )
     assert remote_survivor != baseline_before.commit_id
-    assert JjClient(repo).resolve_commit(survivor.change_id).commit_id == remote_survivor
+    restored = JjClient(repo).resolve_commit(survivor.change_id)
+    assert restored.commit_id != remote_survivor
+    assert restored.parents == (rebased_trunk,)
+    assert JjClient(repo).resolve_commit("@").parents == (restored.commit_id,)
 
     monkeypatch.setattr(sync_apply, "refresh_selected_prs", real_refresh)
     retry_exit_code = run_main(repo, config_path, "sync", survivor.change_id)
@@ -949,7 +959,15 @@ def test_sync_retries_stack_adoption_after_survivor_submit_fails(
     assert retry_exit_code == 0, (retry.out, retry.err)
     recovered_state = state_store.load()
     assert on_trunk.change_id not in recovered_state.prs
-    assert recovered_state.prs[survivor.change_id].submitted_baseline.commit_id == remote_survivor
+    recovered = JjClient(repo).resolve_commit(survivor.change_id)
+    assert recovered_state.prs[survivor.change_id].submitted_baseline.commit_id == (
+        recovered.commit_id
+    )
+    assert fake_repo.ref_target(fake_repo.prs[2].head_ref) == recovered.commit_id
+    assert recovered.change_id == survivor.change_id
+    assert JjClient(repo).query_commits_by_change_ids((on_trunk.change_id,)) == {
+        on_trunk.change_id: ()
+    }
 
 
 def test_sync_all_requires_terminal_stack_merge_for_exact_stack_member(
