@@ -221,7 +221,7 @@ class _GraphqlRuledRef(BaseModel):
 
 
 class _GraphqlBaseBranchMergeQueue(BaseModel):
-    merge_queue: dict[str, object] | None = Field(alias="mergeQueue")
+    merge_queue: _GraphqlNode | None = Field(alias="mergeQueue")
     ref: _GraphqlRuledRef | None
 
 
@@ -527,9 +527,6 @@ class GithubClient:
         merge_progress: bool = False,
     ) -> dict[int, GithubPR | None]:
         numbers = sorted(set(pr_numbers))
-        if not numbers:
-            return {}
-
         results: dict[int, GithubPR | None] = {}
 
         async def query_chunk(chunk: tuple[int, ...]) -> None:
@@ -567,9 +564,6 @@ class GithubClient:
         refs: Sequence[str],
     ) -> dict[str, tuple[GithubPR, ...]]:
         refs = sorted(set(refs))
-        if not refs:
-            return {}
-
         kind = "base" if base else "head"
         response_name = f"pull request {kind} lookup"
         results: dict[str, tuple[GithubPR, ...]] = {}
@@ -597,7 +591,7 @@ class GithubClient:
         *,
         base: str,
         body: str,
-        draft: bool = False,
+        draft: bool,
         head: str,
         title: str,
     ) -> GithubPR:
@@ -660,9 +654,7 @@ class GithubClient:
         }
 
         async def query_chunk(chunk: tuple[int, ...]) -> None:
-            pending_comments: dict[int, str | None] = (
-                {number: None for number in chunk} if markers else {}
-            )
+            pending_comments: dict[int, str | None] = dict.fromkeys(chunk)
             pending_revisions = (
                 dict.fromkeys(chunk, revision_limit) if revision_limit is not None else {}
             )
