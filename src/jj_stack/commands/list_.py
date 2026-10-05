@@ -319,12 +319,9 @@ def _build_row(
     result = build_status_result(prepared=prepared_stack, pr_lookups=pr_lookups)
     # The JSON contract lists a row's changes from the bottom up.
     changes = result.changes[::-1]
-    local_fragments: list[ui.Message] = []
-    if any(change.conflict for change in stack.changes):
-        local_fragments.append(ui.semantic_text("conflicted", "error", "heading"))
     state = _state_from_status(
+        conflicted=any(change.conflict for change in stack.changes),
         github_error=result.github_error,
-        local_fragments=tuple(local_fragments),
         remote_error=result.remote_error,
         states=tuple(change.state for change in changes),
     )
@@ -344,27 +341,20 @@ def _build_row(
 
 def _state_from_status(
     *,
+    conflicted: bool,
     github_error: ErrorMessage | None,
-    local_fragments: tuple[ui.Message, ...],
     remote_error: ErrorMessage | None,
     states: tuple[ChangeState, ...],
 ) -> ui.Message:
-    fragments = [
-        *local_fragments,
+    fragments = (
+        *((ui.semantic_text("conflicted", "error", "heading"),) if conflicted else ()),
         *_status_fragments(
             github_error=github_error,
             remote_error=remote_error,
             states=states,
         ),
-    ]
-    if fragments:
-        joined: list[ui.Message] = []
-        for index, fragment in enumerate(fragments):
-            if index:
-                joined.append(", ")
-            joined.append(fragment)
-        return tuple(joined)
-    return "tracked"
+    )
+    return ui.join(lambda fragment: fragment, fragments) if fragments else "tracked"
 
 
 def _status_fragments(
