@@ -7,7 +7,7 @@ from jj_stack.models.tracking import PRIdentity
 
 def make_pr_identity(
     *,
-    head_ref: str = "jj-stack/example-abcdefgh",
+    head_ref: str,
     pr_number: int = 1,
 ) -> PRIdentity:
     """Build a saved PR number and head branch."""
