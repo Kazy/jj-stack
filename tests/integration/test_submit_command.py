@@ -2303,15 +2303,7 @@ def test_submit_retry_keeps_a_pr_created_while_another_request_failed(
     app = create_app(FakeGithubState.single_repo(fake_repo))
 
     class FailSpecificPRClient(GithubClient):
-        async def create_pr(
-            self,
-            *,
-            base,
-            body,
-            draft=False,
-            head,
-            title,
-        ):
+        async def create_pr(self, *, title, **fields):
             if title == "feature 2":
                 await asyncio.sleep(0.01)
                 raise GithubClientError(
@@ -2320,13 +2312,7 @@ def test_submit_retry_keeps_a_pr_created_while_another_request_failed(
                 )
             if title == "feature 1":
                 await asyncio.sleep(0.03)
-            return await super().create_pr(
-                base=base,
-                body=body,
-                draft=draft,
-                head=head,
-                title=title,
-            )
+            return await super().create_pr(title=title, **fields)
 
     patch_github_client_builders(
         monkeypatch,

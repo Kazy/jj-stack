@@ -336,7 +336,6 @@ class GithubClient:
             "owner": repo.owner,
             "repo": repo.repo,
         }
-        self._repository_id: str | None = None
 
     @property
     def repo(self) -> GithubRepoAddress:
@@ -352,11 +351,7 @@ class GithubClient:
 
     async def get_repo(self) -> GithubRepo:
         response = await self._request("GET", self._repo_path)
-        repo = _response_model(response, model=GithubRepo, response_name="repo lookup")
-        # Opening a pull request needs this ID; submit reads the repo first, so it costs no
-        # extra request there.
-        self._repository_id = repo.node_id
-        return repo
+        return _response_model(response, model=GithubRepo, response_name="repo lookup")
 
     async def get_pr_template(self) -> str:
         """Read GitHub's default template, including the owner's public .github fallback."""
@@ -594,6 +589,7 @@ class GithubClient:
         body: str,
         draft: bool,
         head: str,
+        repository_id: str,
         title: str,
     ) -> GithubPR:
         return await self._pr_mutation(
@@ -603,7 +599,7 @@ class GithubClient:
                 "body": body,
                 "draft": draft,
                 "headRefName": head,
-                "repositoryId": await self._get_repository_id(),
+                "repositoryId": repository_id,
                 "title": title,
             },
             response_name="pull request creation",
@@ -929,16 +925,6 @@ class GithubClient:
                 "convert pull request to draft" if draft else "mark pull request ready for review"
             ),
         )
-
-    async def _get_repository_id(self) -> str:
-        if self._repository_id is None:
-            repo = await self._graphql_repo(
-                _repo_graphql_query(operation_name="RepositoryId", selections="id"),
-                model=_GraphqlNode,
-                response_name="repo ID lookup",
-            )
-            self._repository_id = repo.id
-        return self._repository_id
 
     async def _pr_mutation(
         self, mutation: str, *, fields: dict[str, object], response_name: str

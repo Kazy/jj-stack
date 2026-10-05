@@ -146,7 +146,7 @@ class SubmitSelection:
 
 @dataclass(frozen=True, slots=True)
 class PublicationInputs:
-    """Local publication inputs prepared before GitHub mutations begin."""
+    """Publication inputs prepared before GitHub mutations begin."""
 
     client: JjClient
     explicit_base: ExplicitBase | None
@@ -155,6 +155,8 @@ class PublicationInputs:
     is_maximal_path: bool
     pr_template: str
     remote: GitRemote
+    # GitHub's node ID for the repo, which opening a pull request needs.
+    repository_id: str
     stack: LocalStack
     state: TrackingState
     submitted_commits: dict[ChangeId, LocalCommit]

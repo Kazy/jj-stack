@@ -1881,8 +1881,6 @@ def _graphql_repo_payload(
     repo: FakeGithubRepo,
     variables: dict[str, object],
 ) -> dict[str, object]:
-    if "RepositoryId" in query:
-        return {"id": repo.node_id}
     if "BaseBranchMergeQueue" in query:
         return {
             "mergeQueue": ({"id": "merge-queue"} if repo.merge_queue_enabled else None),

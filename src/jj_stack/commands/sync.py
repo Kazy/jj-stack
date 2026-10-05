@@ -441,6 +441,7 @@ async def _run_selected_convergence(
         github=github,
         plan=plan,
         github_stacks=observed_stacks,
+        repository_id=repo_state.node_id,
         trunk_branch=trunk_branch,
         target=target,
         trunk_commit_id=prepared.stack.trunk.commit_id,

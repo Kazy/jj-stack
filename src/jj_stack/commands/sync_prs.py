@@ -29,6 +29,7 @@ async def refresh_selected_prs(
     dry_run: bool,
     github: GithubClient,
     github_stacks: tuple[GithubStack, ...],
+    repository_id: str,
     target: GithubTarget,
     trunk_branch: str,
 ) -> None:
@@ -67,6 +68,7 @@ async def refresh_selected_prs(
             stack=path.stack,
             state=state,
             remote=target.remote,
+            repository_id=repository_id,
             is_maximal_path=path.is_maximal,
         )
     except ConflictedStackError as error:

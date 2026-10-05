@@ -578,6 +578,7 @@ async def _observe_submit(
         template=github_template if local_template is None else local_template,
         stack=stack,
         remote=remote,
+        repository_id=github_repo_state.node_id,
         state=state,
         is_maximal_path=selection.is_maximal_path,
         descriptions=options.descriptions,

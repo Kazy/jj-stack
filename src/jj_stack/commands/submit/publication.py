@@ -227,6 +227,7 @@ async def publish_prepared(
             github_client=github_client,
             on_progress=progress.advance,
             plans=pr_plans,
+            repository_id=prepared_inputs.repository_id,
             state_store=context.state_store,
         )
     pr_numbers = tuple(pr.number for _, pr in submitted)

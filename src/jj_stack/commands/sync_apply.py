@@ -109,6 +109,7 @@ async def apply_selected_convergence(
     github: GithubClient,
     plan: SelectedConvergencePlan,
     github_stacks: tuple[GithubStack, ...],
+    repository_id: str,
     trunk_branch: str,
     target: GithubTarget,
     trunk_commit_id: CommitId,
@@ -143,6 +144,7 @@ async def apply_selected_convergence(
         dry_run=dry_run,
         github=github,
         github_stacks=github_stacks,
+        repository_id=repository_id,
         target=target,
         trunk_branch=trunk_branch,
     )

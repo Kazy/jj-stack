@@ -58,6 +58,7 @@ async def sync_prs(
     *,
     github_client: GithubClient,
     plans: tuple[PRSyncPlan, ...],
+    repository_id: str,
     state_store: TrackingStore,
     on_progress: Callable[[], None],
 ) -> tuple[tuple[PRSyncPlan, GithubPR], ...]:
@@ -67,6 +68,7 @@ async def sync_prs(
         run_item=lambda plan: _sync_pr(
             github_client=github_client,
             plan=plan,
+            repository_id=repository_id,
             state_store=state_store,
         ),
         on_success=on_progress,
@@ -78,6 +80,7 @@ async def _sync_pr(
     *,
     github_client: GithubClient,
     plan: PRSyncPlan,
+    repository_id: str,
     state_store: TrackingStore,
 ) -> tuple[PRSyncPlan, GithubPR]:
     prepared_change = plan.prepared
@@ -93,6 +96,7 @@ async def _sync_pr(
                 body=plan.generated_description.body,
                 draft=plan.draft,
                 head=branch,
+                repository_id=repository_id,
                 title=plan.generated_description.title,
             ),
             error_message=t"Could not create a pull request for branch {ui.bookmark(branch)}",

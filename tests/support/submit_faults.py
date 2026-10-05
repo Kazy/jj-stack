@@ -24,15 +24,9 @@ def install_submit_fault(
     failed = False
 
     class FaultingGithubClient(GithubClient):
-        async def create_pr(self, *, base, body, draft=False, head, title):
+        async def create_pr(self, *, title, **fields):
             nonlocal failed
-            pr = await super().create_pr(
-                base=base,
-                body=body,
-                draft=draft,
-                head=head,
-                title=title,
-            )
+            pr = await super().create_pr(title=title, **fields)
             if not failed and point == "create_pr" and title == target_title:
                 failed = True
                 raise GithubClientError(
