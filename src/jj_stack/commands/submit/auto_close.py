@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import jj_stack.ui as ui
-from jj_stack.concurrency import DEFAULT_BOUNDED_CONCURRENCY, run_bounded_tasks
+from jj_stack.concurrency import run_bounded_tasks
 from jj_stack.errors import CliError
 from jj_stack.formatting import format_pr_label
 from jj_stack.github.client import GithubClient, GithubClientError
@@ -23,7 +23,6 @@ async def retarget_pr_bases_before_branch_push(
     """Move PR bases that would auto-close after the push to trunk first."""
 
     await run_bounded_tasks(
-        concurrency=DEFAULT_BOUNDED_CONCURRENCY,
         items=prs,
         run_item=lambda pr: _retarget_pr_base_before_branch_push(
             github_client=github_client,

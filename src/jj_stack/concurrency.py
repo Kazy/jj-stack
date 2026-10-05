@@ -32,7 +32,7 @@ async def wait_for_read_tasks(*tasks: asyncio.Task[object]) -> None:
 
 async def run_bounded_tasks[TaskItemT, TaskResultT](
     *,
-    concurrency: int,
+    concurrency: int = DEFAULT_BOUNDED_CONCURRENCY,
     items: Sequence[TaskItemT],
     run_item: Callable[[TaskItemT], Coroutine[Any, Any, TaskResultT]],
     on_success: Callable[[], None] | None = None,

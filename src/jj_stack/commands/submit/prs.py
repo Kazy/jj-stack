@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Sequence
 
 import jj_stack.ui as ui
-from jj_stack.concurrency import DEFAULT_BOUNDED_CONCURRENCY, run_bounded_tasks
+from jj_stack.concurrency import run_bounded_tasks
 from jj_stack.errors import CliError
 from jj_stack.formatting import format_pr_number
 from jj_stack.github.client import GithubClient, GithubClientError
@@ -40,7 +40,6 @@ async def load_re_request_reviewers(
     prs: tuple[GithubPR, ...],
 ) -> dict[int, list[str]]:
     reviews = await run_bounded_tasks(
-        concurrency=DEFAULT_BOUNDED_CONCURRENCY,
         items=prs,
         run_item=lambda pr: _github_request(
             github_client.list_pr_reviews(pr_number=pr.number),
@@ -63,7 +62,6 @@ async def sync_prs(
     on_progress: Callable[[], None],
 ) -> tuple[tuple[PRSyncPlan, GithubPR], ...]:
     submitted_changes = await run_bounded_tasks(
-        concurrency=DEFAULT_BOUNDED_CONCURRENCY,
         items=plans,
         run_item=lambda plan: _sync_pr(
             github_client=github_client,
