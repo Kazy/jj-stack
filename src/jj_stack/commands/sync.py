@@ -205,7 +205,6 @@ async def _run_all_convergence(
                 github=github,
                 github_repo=github_repo,
                 dry_run=dry_run,
-                fetch_remote_state=False,
                 revset=change_id,
                 trunk_branch=trunk_branch,
             )
@@ -286,18 +285,15 @@ async def converge_selected_stack(
     *,
     context: CommandContext,
     github: GithubClient,
-    containing_change_id: str | None = None,
     dry_run: bool,
-    fetch_remote_state: bool = True,
-    github_repo: GithubRepo | None = None,
-    print_selected: bool = False,
-    revset: str | None,
+    github_repo: GithubRepo,
+    revset: str,
     trunk_branch: str | None = None,
 ) -> int:
     prepared = _prepare_selected_stack(
         context=context,
-        containing_change_id=containing_change_id,
-        fetch_remote_state=fetch_remote_state,
+        containing_change_id=None,
+        fetch_remote_state=False,
         revset=revset,
     )
     return await converge_prepared_stack(
@@ -306,7 +302,6 @@ async def converge_selected_stack(
         github=github,
         github_repo=github_repo,
         prepared=prepared,
-        print_selected=print_selected,
         trunk_branch=trunk_branch,
     )
 

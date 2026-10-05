@@ -214,7 +214,6 @@ async def _update_local_stack(
             github=github_client,
             github_repo=github_repo_state,
             dry_run=False,
-            fetch_remote_state=False,
             revset=head.change_id,
         )
     return await cleanup_stack_without_local_copies(
