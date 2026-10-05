@@ -425,7 +425,7 @@ class StackMachine(RuleBasedStateMachine):
         self.fake.pr_events.clear()
         self.ok("submit", head)
         self.pr_count += len(fresh)
-        self.accept_submit(path, fresh=fresh, prior_numbers=numbers)
+        self.accept_submit(path, prior_numbers=numbers)
         assert self.outside(path) == outside
         assert all(event.kind != "state" for event in self.fake.pr_events)
 
@@ -471,13 +471,10 @@ class StackMachine(RuleBasedStateMachine):
         return failures
 
     def accept_submit(
-        self,
-        path: tuple[str, ...],
-        *,
-        fresh: set[str] | None = None,
-        prior_numbers: set[int] | None = None,
-        publish: bool = True,
+        self, path: tuple[str, ...], *, prior_numbers: set[int] | None = None
     ) -> None:
+        """Check the path's PRs; with prior_numbers, its new changes were just published."""
+
         state = self.store.load()
         changes = selected_stack(self.repo, self.ids[path[-1]]).changes
         assert tuple(change.change_id for change in changes) == tuple(
@@ -486,14 +483,13 @@ class StackMachine(RuleBasedStateMachine):
         refs = remote_refs(self.fake.git_dir)
         base = "main"
         for label, change in zip(path, changes, strict=True):
-            if not publish and label not in self.submitted:
+            if prior_numbers is None and label not in self.submitted:
                 assert self.ids[label] not in state.prs
                 continue
             record = state.prs[self.ids[label]]
             if label in self.submitted:
                 assert record.pr_identity == self.submitted[label].pr_identity
-            elif fresh is not None:
-                assert label in fresh and prior_numbers is not None
+            elif prior_numbers is not None:
                 assert record.pr_identity.pr_number not in prior_numbers
             self.submitted[label] = record
             pr = self.pr(label)
@@ -923,7 +919,7 @@ class StackMachine(RuleBasedStateMachine):
         )
         assert code == expected, (self.last_error, output)
         if self.rebased.intersection(path):
-            self.accept_submit(path, publish=False)
+            self.accept_submit(path)
             self.rebased.remove(path[0])
         else:
             self.accept_sync(index, conflicts, refs)
@@ -1051,7 +1047,7 @@ class StackMachine(RuleBasedStateMachine):
         remaining = path[count:]
         if remaining:
             self.paths[index] = remaining
-            self.accept_submit(remaining, publish=False)
+            self.accept_submit(remaining)
         else:
             self.paths.pop(index)
 
