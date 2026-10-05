@@ -131,14 +131,21 @@ async def _run_merge(
                 revset=revset,
             )
             with console.spinner(description="Inspecting jj stack"):
-                prepared_merge = _prepare_merge(
+                prepared = prepare_local_stack(
+                    containing_change_id=target_change_id,
                     context=context,
-                    dry_run=dry_run,
-                    merge_method=merge_method,
+                    fetch_remote_state=True,
                     revset=selected_revset,
-                    target=target,
-                    target_change_id=target_change_id,
                 )
+            prepared_merge = PreparedMerge(
+                context=context,
+                dry_run=dry_run,
+                merge_method=merge_method,
+                stack=prepared.stack,
+                state=prepared.state,
+                target=target,
+                target_change_id=target_change_id,
+            )
             outcome, trunk = await _request_merge_async(prepared_merge, github_client)
         if isinstance(outcome, PendingMerge):
             _print_merge_result(outcome.result())
@@ -243,32 +250,6 @@ def _resolve_merge_target(
         console.note(note)
         return None, resolved_revset
     return revset, None
-
-
-def _prepare_merge(
-    *,
-    context: CommandContext,
-    dry_run: bool,
-    merge_method: MergeMethod | None,
-    revset: str | None,
-    target: GithubTarget,
-    target_change_id: ChangeId | None,
-) -> PreparedMerge:
-    prepared = prepare_local_stack(
-        containing_change_id=target_change_id,
-        context=context,
-        fetch_remote_state=True,
-        revset=revset,
-    )
-    return PreparedMerge(
-        context=context,
-        dry_run=dry_run,
-        merge_method=merge_method,
-        stack=prepared.stack,
-        state=prepared.state,
-        target=target,
-        target_change_id=target_change_id,
-    )
 
 
 async def _request_merge_async(
