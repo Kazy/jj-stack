@@ -63,7 +63,7 @@ type ConsoleObject = ui.Renderable | ConsoleRenderable | RichCast
 class ProgressLike(Protocol):
     """Minimal progress-handle protocol used by command helpers."""
 
-    def advance(self, amount: int = 1) -> None: ...
+    def advance(self) -> None: ...
 
 
 class SpinnerLike(Protocol):
@@ -191,8 +191,8 @@ class _ConfiguredConsole:
 class _NullProgress:
     """No-op progress handle returned when live progress is disabled."""
 
-    def advance(self, amount: int = 1) -> None:
-        del amount
+    def advance(self) -> None:
+        pass
 
 
 class _NullSpinner:
@@ -227,8 +227,8 @@ class _JsonlStatus:
             self.text = description
             self.emit()
 
-    def advance(self, amount: int = 1) -> None:
-        self.completed += amount
+    def advance(self) -> None:
+        self.completed += 1
         self.emit()
 
     def emit(self) -> None:
@@ -245,8 +245,8 @@ class _RichProgressHandle:
     progress: Progress
     task_id: TaskID
 
-    def advance(self, amount: int = 1) -> None:
-        self.progress.advance(self.task_id, amount)
+    def advance(self) -> None:
+        self.progress.advance(self.task_id)
 
 
 @dataclass(slots=True)
