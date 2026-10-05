@@ -1016,9 +1016,8 @@ class JjClient:
         lines = self._query_template_lines(
             revset, _membership_scan_template(membership_revsets), cli_args=cli_args
         )
-        return tuple(
-            _parse_commit_with_flags_line(line, len(membership_revsets)) for line in lines
-        )
+        scans = (_parse_json_line(line, command="jj log", model=_CommitScan) for line in lines)
+        return tuple((scan.commit, scan.membership) for scan in scans)
 
     def _query_template_lines(
         self,
@@ -1299,19 +1298,6 @@ def _parse_bookmark_rows(stdout: str) -> tuple[Bookmark, ...]:
 
 def _parse_commit_line(line: str) -> LocalCommit:
     return _parse_json_line(line, command="jj log", model=LocalCommit)
-
-
-def _parse_commit_with_flags_line(
-    line: str,
-    flag_count: int,
-) -> tuple[LocalCommit, tuple[bool, ...]]:
-    scan = _parse_json_line(line, command="jj log", model=_CommitScan)
-    if len(scan.membership) != flag_count:
-        raise JjCommandError(
-            t"{ui.cmd('jj log')} output has {len(scan.membership)} membership flags; "
-            t"expected {flag_count}."
-        )
-    return scan.commit, scan.membership
 
 
 def _membership_scan_template(membership_revsets: Sequence[str]) -> str:
