@@ -39,7 +39,7 @@ def install_submit_fault(
             self,
             *,
             pr_id,
-            base=None,
+            base,
             body=None,
             title=None,
         ):

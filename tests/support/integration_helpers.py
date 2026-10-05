@@ -42,7 +42,7 @@ def fake_github_client_wiring(
 ) -> tuple[Callable[..., GithubClient], Callable[..., GithubRepoAddress]]:
     """Return the client builder and repo-address stubs for a fake server."""
 
-    def build_github_client(*, repo: GithubRepoAddress, token: str | None = None) -> GithubClient:
+    def build_github_client(*, repo: GithubRepoAddress, token: str | None) -> GithubClient:
         return client_type(
             httpx2.AsyncClient(
                 base_url="https://api.github.test",
@@ -90,7 +90,7 @@ def configure_fake_github_environment(
     fake_repo: FakeGithubRepo,
     monkeypatch,
     tmp_path: Path,
-    extra_config_lines: list[str] | None = None,
+    extra_config_lines: list[str] | None,
 ) -> Path:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state-home"))
     config_path = write_fake_github_config(
