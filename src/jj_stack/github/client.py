@@ -14,7 +14,7 @@ from textwrap import dedent, indent, shorten
 from typing import Literal
 
 import httpx2
-from pydantic import AliasPath, BaseModel, ConfigDict, Field, ValidationError
+from pydantic import AliasPath, BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from jj_stack.concurrency import DEFAULT_BOUNDED_CONCURRENCY, wait_for_read_tasks
 from jj_stack.errors import EXIT_GITHUB, SummarizedError
@@ -352,11 +352,7 @@ class GithubClient:
 
     async def get_repo(self) -> GithubRepo:
         response = await self._request("GET", self._repo_path)
-        repo = _validate_model(
-            self._expect_json_payload(response, response_name="repo lookup"),
-            model=GithubRepo,
-            error_context="GitHub repo lookup response had invalid data",
-        )
+        repo = _response_model(response, model=GithubRepo, response_name="repo lookup")
         # Opening a pull request needs this ID; submit reads the repo first, so it costs no
         # extra request there.
         self._repository_id = repo.node_id
@@ -488,20 +484,13 @@ class GithubClient:
         return targets, template
 
     async def list_stacks(self) -> tuple[GithubStack, ...]:
-        payload = await self._get_paginated_json_array(
-            f"{self._repo_path}/stacks",
-            response_name="stack list",
-        )
-        return tuple(
-            _validate_stack_payload(item, response_name="stack list") for item in payload
+        return await self._get_paginated(
+            f"{self._repo_path}/stacks", model=GithubStack, response_name="stack list"
         )
 
     async def get_stack(self, *, stack_number: int) -> GithubStack:
         response = await self._request("GET", f"{self._repo_path}/stacks/{stack_number}")
-        return _validate_stack_payload(
-            self._expect_json_payload(response, response_name="stack lookup"),
-            response_name="stack lookup",
-        )
+        return _response_model(response, model=GithubStack, response_name="stack lookup")
 
     async def create_stack(self, *, pr_numbers: Sequence[int]) -> GithubStack:
         response = await self._request(
@@ -509,10 +498,7 @@ class GithubClient:
             f"{self._repo_path}/stacks",
             json={"pull_requests": list(pr_numbers)},
         )
-        return _validate_stack_payload(
-            self._expect_json_payload(response, response_name="stack creation"),
-            response_name="stack creation",
-        )
+        return _response_model(response, model=GithubStack, response_name="stack creation")
 
     async def append_to_stack(
         self,
@@ -525,10 +511,7 @@ class GithubClient:
             f"{self._repo_path}/stacks/{stack_number}/add",
             json={"pull_requests": list(pr_numbers)},
         )
-        return _validate_stack_payload(
-            self._expect_json_payload(response, response_name="stack append"),
-            response_name="stack append",
-        )
+        return _response_model(response, model=GithubStack, response_name="stack append")
 
     async def unstack(self, *, stack_number: int) -> GithubStack | None:
         response = await self._request(
@@ -537,10 +520,7 @@ class GithubClient:
         )
         if response.status_code == 204:
             return None
-        return _validate_stack_payload(
-            self._expect_json_payload(response, response_name="unstack"),
-            response_name="unstack",
-        )
+        return _response_model(response, model=GithubStack, response_name="unstack")
 
     async def get_pr(
         self,
@@ -672,17 +652,10 @@ class GithubClient:
         *,
         pr_number: int,
     ) -> tuple[GithubPRReview, ...]:
-        payload = await self._get_paginated_json_array(
+        return await self._get_paginated(
             f"{self._repo_path}/pulls/{pr_number}/reviews",
+            model=GithubPRReview,
             response_name="pull request reviews",
-        )
-        return tuple(
-            _validate_model(
-                item,
-                model=GithubPRReview,
-                error_context="GitHub pull request reviews response had invalid data",
-            )
-            for item in payload
         )
 
     async def find_issue_comments_by_body_marker(
@@ -1098,25 +1071,14 @@ class GithubClient:
         # 409 means GitHub already has an operation in flight for this pull request, not that
         # the merge conflicts.
         already_pending = response.status_code == 409
-        if already_pending:
-            try:
-                payload = response.json()
-            except ValueError as error:
-                raise GithubClientError(
-                    "GitHub's already-pending merge response was not valid JSON.",
-                    status_code=409,
-                ) from error
-        else:
-            payload = self._expect_json_payload(
-                response,
-                response_name="stack merge submission",
-            )
+        if not already_pending:
+            _expect_success(response)
         return GithubStackMergeSubmission(
             already_pending=already_pending,
-            result=_validate_model(
-                payload,
+            result=_json_model(
+                response.content,
                 model=GithubStackMerge,
-                error_context="GitHub stack merge response had invalid data",
+                response_name="stack merge",
             ),
         )
 
@@ -1130,10 +1092,10 @@ class GithubClient:
             "GET",
             f"{self._repo_path}/pulls/{pr_number}/merge-async/{operation_uuid}",
         )
-        return _validate_model(
-            self._expect_json_payload(response, response_name="stack merge poll"),
+        return _response_model(
+            response,
             model=GithubStackMerge,
-            error_context="GitHub stack merge response had invalid data",
+            response_name="stack merge",
         )
 
     async def close_pr(
@@ -1196,21 +1158,25 @@ class GithubClient:
             await asyncio.sleep(retry_after_seconds)
             attempt += 1
 
-    async def _get_paginated_json_array(
+    async def _get_paginated[ItemT](
         self,
         path: str,
         *,
+        model: type[ItemT],
         response_name: str,
-    ) -> tuple[object, ...]:
-        items: list[object] = []
+    ) -> tuple[ItemT, ...]:
+        items: list[ItemT] = []
         next_path: str | None = f"{path}?per_page={PR_PAGE_SIZE}"
 
         while next_path is not None:
             response = await self._request("GET", next_path)
-            payload = self._expect_json_payload(response, response_name=response_name)
-            if not isinstance(payload, list):
-                raise GithubClientError(f"GitHub {response_name} response was not a JSON array.")
-            items.extend(payload)
+            items.extend(
+                _response_model(
+                    response,
+                    model=tuple[model, ...],
+                    response_name=response_name,
+                )
+            )
             next_path = response.links.get("next", {}).get("url")
 
         return tuple(items)
@@ -1231,11 +1197,10 @@ class GithubClient:
                 "variables": variables,
             },
         )
-        payload = self._expect_json_payload(response, response_name=response_name)
-        envelope = _validate_model(
-            payload,
+        envelope = _response_model(
+            response,
             model=_GraphqlResponse,
-            error_context=f"GitHub {response_name} response had invalid data",
+            response_name=response_name,
         )
         errors = envelope.errors
         if errors and not (tolerate_missing_selections and _only_unresolvable_aliases(errors)):
@@ -1246,28 +1211,6 @@ class GithubClient:
         if envelope.data is None:
             raise GithubClientError(f"GitHub {response_name} response was missing `data`.")
         return envelope.data
-
-    def _expect_json_payload(
-        self,
-        response: httpx2.Response,
-        *,
-        response_name: str,
-    ) -> object:
-        """Read a successful response's JSON body, or fail closed if it has none.
-
-        A proxy or maintenance page can answer 200 with an HTML body, so a body read goes
-        through this guard rather than calling `response.json()` on its own. The two reads
-        that deliberately inspect a *failed* response instead - the 422 branch-at-commit
-        probe and the 409 already-pending merge - carry their own guards.
-        """
-
-        _expect_success(response)
-        try:
-            return response.json()
-        except ValueError as error:
-            raise GithubClientError(
-                f"GitHub {response_name} response was not valid JSON."
-            ) from error
 
 
 def _expect_success(response: httpx2.Response) -> None:
@@ -1999,16 +1942,6 @@ def _revisions_from_graphql(
     )
 
 
-def _validate_stack_payload(payload: object, *, response_name: str) -> GithubStack:
-    number = payload.get("number") if isinstance(payload, dict) else None
-    named = f"stack #{number}" if isinstance(number, int) else "one stack"
-    return _validate_model(
-        payload,
-        model=GithubStack,
-        error_context=f"GitHub {response_name} response had unusable data for {named}",
-    )
-
-
 def _validate_model[ResponseModel: BaseModel](
     payload: object,
     *,
@@ -2018,7 +1951,31 @@ def _validate_model[ResponseModel: BaseModel](
     try:
         return model.model_validate(payload)
     except ValidationError as error:
-        reasons = "; ".join(
-            detail["msg"].removeprefix("Value error, ") for detail in error.errors()
-        )
-        raise GithubClientError(f"{error_context}: {reasons}.") from error
+        raise _invalid_response(error_context, error) from error
+
+
+def _response_model[ResponseT](
+    response: httpx2.Response, *, model: type[ResponseT], response_name: str
+) -> ResponseT:
+    """Validate a successful response's JSON body.
+
+    A proxy or maintenance page can answer 200 with an HTML body, which fails here too.
+    """
+
+    _expect_success(response)
+    return _json_model(response.content, model=model, response_name=response_name)
+
+
+def _json_model[ResponseT](
+    content: bytes, *, model: type[ResponseT], response_name: str
+) -> ResponseT:
+    try:
+        return TypeAdapter(model).validate_json(content)
+    except ValidationError as error:
+        context = f"GitHub {response_name} response had invalid data"
+        raise _invalid_response(context, error) from error
+
+
+def _invalid_response(error_context: str, error: ValidationError) -> GithubClientError:
+    reasons = "; ".join(detail["msg"].removeprefix("Value error, ") for detail in error.errors())
+    return GithubClientError(f"{error_context}: {reasons}.")

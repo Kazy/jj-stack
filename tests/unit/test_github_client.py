@@ -307,7 +307,7 @@ def test_github_client_does_not_retry_non_rate_limited_errors() -> None:
 @pytest.mark.parametrize(
     ("body", "reason"),
     (
-        ("<html>Proxy authentication required</html>", "was not valid JSON"),
+        ("<html>Proxy authentication required</html>", "had invalid data: Invalid JSON"),
         ('{"full_name": null}', "had invalid data"),
     ),
 )
@@ -463,7 +463,7 @@ def test_github_client_fails_the_whole_stack_listing_on_an_unexpected_payload() 
         async with _github_client(handler) as client:
             await client.list_stacks()
 
-    with pytest.raises(GithubClientError, match="unusable data for stack #3"):
+    with pytest.raises(GithubClientError, match="stack list response had invalid data"):
         asyncio.run(run_test())
 
 
