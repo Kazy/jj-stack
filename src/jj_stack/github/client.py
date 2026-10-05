@@ -6,11 +6,12 @@ import asyncio
 import logging
 import re
 import time
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from email.utils import parsedate_to_datetime
 from itertools import batched
 from math import ceil
 from textwrap import dedent, indent, shorten
+from types import MappingProxyType
 from typing import Literal
 
 import httpx2
@@ -394,12 +395,12 @@ class GithubClient:
             query, branch_variables = _branch_targets_query(
                 chunk, include_pr_template=read_template
             )
-            payload = await self._graphql_query(
+            repo = await self._graphql_repo(
                 query,
-                variables={**self._repo_variables, **branch_variables},
+                model=dict[str, object],
                 response_name="branch target lookup",
+                variables=branch_variables,
             )
-            repo = _graphql_repo_payload(payload, response_name="branch target lookup")
             if read_template:
                 template = _default_pr_template(repo)
             for index, branch in enumerate(chunk):
@@ -453,12 +454,12 @@ class GithubClient:
                     suffixes=tuple(suffix for suffix, _cursor in pending),
                     include_pr_template=read_template,
                 )
-                payload = await self._graphql_query(
+                repo = await self._graphql_repo(
                     query,
-                    variables={**self._repo_variables, **suffix_variables},
+                    model=dict[str, object],
                     response_name="branch suffix lookup",
+                    variables=suffix_variables,
                 )
-                repo = _graphql_repo_payload(payload, response_name="branch suffix lookup")
                 if read_template:
                     template = _default_pr_template(repo)
                 next_page: list[tuple[str, str]] = []
@@ -546,30 +547,14 @@ class GithubClient:
 
         async def query_chunk(chunk: tuple[int, ...]) -> None:
             query = _prs_by_number_query(chunk, merge_progress=merge_progress)
-            payload = await self._graphql_query(
+            repo = await self._graphql_repo(
                 query,
+                model=dict[str, GithubPR | None],
                 response_name="pull request batch lookup",
                 tolerate_missing_selections=True,
-                variables=self._repo_variables,
-            )
-            repo = _graphql_repo_payload(
-                payload,
-                response_name="pull request batch lookup",
             )
             for number in chunk:
-                alias = f"pr_{number}"
-                raw_pr = repo.get(alias)
-                if raw_pr is None:
-                    results[number] = None
-                    continue
-                results[number] = _validate_model(
-                    raw_pr,
-                    model=GithubPR,
-                    error_context=(
-                        "GitHub pull request batch lookup response had invalid pull request "
-                        f"payload for #{number}"
-                    ),
-                )
+                results[number] = repo.get(f"pr_{number}")
 
         await _query_chunks(numbers, query_chunk)
         return results
@@ -605,21 +590,16 @@ class GithubClient:
         async def query_chunk(chunk: tuple[str, ...]) -> None:
             aliases = {f"{kind}_{index}": ref for index, ref in enumerate(chunk)}
             query, ref_variables = _prs_by_ref_query(aliases, base=base)
-            payload = await self._graphql_query(
+            repo = await self._graphql_repo(
                 query,
-                variables={**self._repo_variables, **ref_variables},
+                model=dict[str, _GraphqlPRConnection],
                 response_name=response_name,
-            )
-            repo = _graphql_repo_payload(
-                payload,
-                response_name=response_name,
+                variables=ref_variables,
             )
             for alias, ref in aliases.items():
-                results[ref] = _pr_connection_from_graphql(
-                    alias=alias,
-                    connection=repo.get(alias),
-                    expected_head_label=(None if base else f"{self._repo.owner}:{ref}"),
-                    response_name=response_name,
+                head_label = f"{self._repo.owner}:{ref}"
+                results[ref] = tuple(
+                    pr for pr in repo[alias].nodes if base or pr.head.label == head_label
                 )
 
         await _query_chunks(refs, query_chunk)
@@ -705,28 +685,15 @@ class GithubClient:
                     comments_cursors=pending_comments,
                     revision_limits=pending_revisions,
                 )
-                payload = await self._graphql_query(
+                repo = await self._graphql_repo(
                     query,
+                    model=dict[str, _GraphqlPRHistory | None],
                     response_name="pull request history lookup",
                     tolerate_missing_selections=True,
-                    variables={**self._repo_variables, **cursor_variables},
-                )
-                repo = _graphql_repo_payload(
-                    payload,
-                    response_name="pull request history lookup",
+                    variables=cursor_variables,
                 )
                 for number in request_numbers:
-                    alias = f"pr_{number}"
-                    history = None
-                    if (raw_pr := repo.get(alias)) is not None:
-                        history = _validate_model(
-                            raw_pr,
-                            model=_GraphqlPRHistory,
-                            error_context=(
-                                "GitHub pull request history lookup response had invalid "
-                                f"pull request payload for {alias}"
-                            ),
-                        )
+                    history = repo.get(f"pr_{number}")
                     if number in pending_comments:
                         comments, cursor = _issue_comments_from_graphql(history)
                         for marker in markers:
@@ -772,24 +739,15 @@ class GithubClient:
                 query, variables = _pr_merge_details_query(
                     pending_threads, pending_checks, pending_merge_checks
                 )
-                payload = await self._graphql_query(
+                repo = await self._graphql_repo(
                     query,
+                    model=dict[str, _GraphqlPRMergeDetails | None],
                     response_name="merge details lookup",
                     tolerate_missing_selections=True,
-                    variables={**self._repo_variables, **variables},
+                    variables=variables,
                 )
-                repo = _graphql_repo_payload(payload, response_name="merge details lookup")
                 for number in numbers:
-                    raw = repo.get(f"pr_{number}")
-                    page = (
-                        _validate_model(
-                            raw,
-                            model=_GraphqlPRMergeDetails,
-                            error_context=f"GitHub returned invalid merge details for #{number}",
-                        )
-                        if raw is not None
-                        else None
-                    )
+                    page = repo.get(f"pr_{number}")
                     merge_commit = page.test_merge.oid if page and page.test_merge else None
                     if (
                         page is None
@@ -868,24 +826,19 @@ class GithubClient:
                       {compare}
                     }}"""
                 )
-            payload = await self._graphql_query(
+            repo = await self._graphql_repo(
                 _repo_graphql_query(
                     operation_name="PullRequestProgress",
                     selections="\n".join(selections),
                     string_variables=tuple(variables),
                 ),
+                model=dict[str, _GraphqlPRProgress | None],
                 response_name="pull request progress lookup",
                 tolerate_missing_selections=True,
-                variables={**self._repo_variables, **variables},
+                variables=variables,
             )
-            repo = _graphql_repo_payload(payload, response_name="pull request progress lookup")
             for pr in chunk:
-                if (raw := repo.get(f"pr_{pr.number}")) is not None:
-                    progress = _validate_model(
-                        raw,
-                        model=_GraphqlPRProgress,
-                        error_context=f"GitHub returned invalid progress for #{pr.number}",
-                    )
+                if (progress := repo.get(f"pr_{pr.number}")) is not None:
                     results[pr.number] = (progress.approvals, progress.behind)
 
         await _query_chunks(prs, query_chunk)
@@ -895,18 +848,14 @@ class GithubClient:
         if not branches:
             return {}
         variables = {f"ref_{index}": f"refs/heads/{name}" for index, name in enumerate(branches)}
-        payload = await self._graphql_query(
+        repo = await self._graphql_repo(
             _branch_rules_query(len(branches)),
+            model=dict[str, _GraphqlBranchRules | None],
             response_name="branch rules lookup",
-            variables={**self._repo_variables, **variables},
+            variables=variables,
         )
-        repo = _graphql_repo_payload(payload, response_name="branch rules lookup")
         return {
-            name: _validate_model(
-                repo.get(f"branch_{index}") or {},
-                model=_GraphqlBranchRules,
-                error_context=f"GitHub returned invalid rules for branch {name}",
-            )
+            name: repo.get(f"branch_{index}") or _GraphqlBranchRules()
             for index, name in enumerate(branches)
         }
 
@@ -1003,16 +952,12 @@ class GithubClient:
 
     async def _get_repository_id(self) -> str:
         if self._repository_id is None:
-            payload = await self._graphql_query(
+            repo = await self._graphql_repo(
                 _repo_graphql_query(operation_name="RepositoryId", selections="id"),
-                response_name="repo ID lookup",
-                variables=self._repo_variables,
-            )
-            self._repository_id = _validate_model(
-                _graphql_repo_payload(payload, response_name="repo ID lookup"),
                 model=_GraphqlNode,
-                error_context="GitHub repo ID lookup response had invalid data",
-            ).id
+                response_name="repo ID lookup",
+            )
+            self._repository_id = repo.id
         return self._repository_id
 
     async def _pr_mutation(
@@ -1030,19 +975,11 @@ class GithubClient:
         ).pull_request
 
     async def base_branch_uses_merge_queue(self, *, branch: str) -> bool:
-        payload = await self._graphql_query(
+        observed = await self._graphql_repo(
             _base_branch_merge_queue_query(),
-            response_name="base branch merge queue lookup",
-            variables={
-                **self._repo_variables,
-                "branch": branch,
-                "qualified": f"refs/heads/{branch}",
-            },
-        )
-        observed = _validate_model(
-            _graphql_repo_payload(payload, response_name="base branch merge queue lookup"),
             model=_GraphqlBaseBranchMergeQueue,
-            error_context="GitHub base branch merge queue lookup response had invalid data",
+            response_name="base branch merge queue lookup",
+            variables={"branch": branch, "qualified": f"refs/heads/{branch}"},
         )
         if observed.merge_queue is not None:
             return True
@@ -1180,6 +1117,27 @@ class GithubClient:
             next_path = response.links.get("next", {}).get("url")
 
         return tuple(items)
+
+    async def _graphql_repo[RepoT](
+        self,
+        query: str,
+        *,
+        model: type[RepoT],
+        response_name: str,
+        tolerate_missing_selections: bool = False,
+        variables: Mapping[str, object] = MappingProxyType({}),
+    ) -> RepoT:
+        data = await self._graphql_query(
+            query,
+            response_name=response_name,
+            tolerate_missing_selections=tolerate_missing_selections,
+            variables={**self._repo_variables, **variables},
+        )
+        return _validate_model(
+            data.get("repository"),
+            model=model,
+            error_context=f"GitHub {response_name} response had invalid repo data",
+        )
 
     async def _graphql_query(
         self,
@@ -1386,19 +1344,6 @@ def _pr_template_selection() -> str:
         for index, path in enumerate(DEFAULT_PR_TEMPLATE_PATHS)
     )
     return f"pullRequestTemplates {{ repository {{ {files} }} }}"
-
-
-def _graphql_repo_payload(
-    payload: dict[str, object],
-    *,
-    response_name: str,
-) -> dict[str, object]:
-    repo = payload.get("repository")
-    if repo is None:
-        raise GithubClientError(f"GitHub {response_name} response was missing repo data.")
-    if not isinstance(repo, dict):
-        raise GithubClientError(f"GitHub {response_name} response had invalid repo data.")
-    return repo
 
 
 def _prs_by_number_query(numbers: Sequence[int], *, merge_progress: bool) -> str:
@@ -1862,28 +1807,6 @@ def _graphql_document(document: str) -> str:
     return dedent(document).strip() + "\n"
 
 
-def _pr_connection_from_graphql(
-    *,
-    alias: str,
-    connection: object,
-    expected_head_label: str | None,
-    response_name: str,
-) -> tuple[GithubPR, ...]:
-    parsed = _validate_model(
-        connection,
-        model=_GraphqlPRConnection,
-        error_context=(
-            f"GitHub {response_name} response had invalid connection payload for {alias}"
-        ),
-    )
-    prs: list[GithubPR] = []
-    for pr in parsed.nodes:
-        if expected_head_label is not None and pr.head.label != expected_head_label:
-            continue
-        prs.append(pr)
-    return tuple(prs)
-
-
 def _branch_target(ref: _GraphqlRef) -> tuple[str, CommitId]:
     qualified = f"{ref.prefix}{ref.name}"
     if not qualified.startswith("refs/heads/"):
@@ -1942,14 +1865,14 @@ def _revisions_from_graphql(
     )
 
 
-def _validate_model[ResponseModel: BaseModel](
+def _validate_model[ResponseT](
     payload: object,
     *,
-    model: type[ResponseModel],
+    model: type[ResponseT],
     error_context: str,
-) -> ResponseModel:
+) -> ResponseT:
     try:
-        return model.model_validate(payload)
+        return TypeAdapter(model).validate_python(payload)
     except ValidationError as error:
         raise _invalid_response(error_context, error) from error
 
@@ -1977,5 +1900,9 @@ def _json_model[ResponseT](
 
 
 def _invalid_response(error_context: str, error: ValidationError) -> GithubClientError:
-    reasons = "; ".join(detail["msg"].removeprefix("Value error, ") for detail in error.errors())
+    # The location names the alias, such as the pull request, that GitHub answered badly.
+    reasons = "; ".join(
+        " ".join((*map(str, detail["loc"][:1]), detail["msg"].removeprefix("Value error, ")))
+        for detail in error.errors()
+    )
     return GithubClientError(f"{error_context}: {reasons}.")

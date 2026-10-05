@@ -772,7 +772,7 @@ def test_github_client_rejects_graphql_payload_missing_repo_data() -> None:
                 pr_numbers=(7,),
             )
 
-    with pytest.raises(GithubClientError, match="missing repo data"):
+    with pytest.raises(GithubClientError, match="invalid repo data"):
         asyncio.run(run_test())
 
 
@@ -791,7 +791,7 @@ def test_github_client_rejects_incomplete_pr_connection() -> None:
                 base_refs=("jj-stack/seven",),
             )
 
-    with pytest.raises(GithubClientError, match="invalid connection payload"):
+    with pytest.raises(GithubClientError, match="invalid repo data: base_0 Field required"):
         asyncio.run(run_test())
 
 
