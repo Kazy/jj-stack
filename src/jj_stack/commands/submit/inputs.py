@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import jj_stack.ui as ui
 from jj_stack.bootstrap import CommandContext
 from jj_stack.errors import CliError, ConflictedStackError, UsageError
@@ -87,7 +89,7 @@ def prepare_publication_inputs(
     repository_id: str,
     state: TrackingState,
     is_maximal_path: bool,
-    descriptions: tuple[str, ...] = (),
+    descriptions: Sequence[str] = (),
     describe_with: str | None = None,
 ) -> PublicationInputs:
     client = context.jj_client

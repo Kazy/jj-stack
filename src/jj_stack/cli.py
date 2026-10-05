@@ -50,7 +50,9 @@ from jj_stack.cli_help import (
     normalized_help_text,
     render_website_reference,
 )
+from jj_stack.commands.submit.models import SubmitOptions
 from jj_stack.completion import emit_shell_completion, validate_jj_alias
+from jj_stack.config import parse_comma_separated_flag_values
 from jj_stack.console import OutputFormat, RequestedColorMode, configured_console
 from jj_stack.errors import (
     EXIT_INTERRUPTED,
@@ -184,6 +186,12 @@ class _OrderedArgument(str):
         )
 
 
+class _CommaSeparatedValues(Action):
+    def __call__(self, parser, namespace, values, option_string=None):  # noqa: ARG002
+        previous = getattr(namespace, self.dest) or []
+        setattr(namespace, self.dest, parse_comma_separated_flag_values([*previous, values]))
+
+
 class _ViewSelectorAction(Action):
     def __call__(self, parser, namespace, values, option_string=None):  # noqa: ARG002
         kind = "pr" if option_string else "revset"
@@ -248,7 +256,9 @@ def build_parser() -> ArgumentParser:
         aliases=_COMMAND_ALIASES["submit"],
         help_text=normalized_help_text(submit_command.HELP),
         description_text=submit_command.__doc__ or "",
-        handler=_forward_handler(submit_command.submit, open_="open"),
+        handler=lambda args: submit_command.submit(
+            global_options=args.global_options, options=_forward_handler(SubmitOptions)(args)
+        ),
         revset_help=(
             t"Stack head to submit; defaults to {ui.revset('@')} when the "
             t"working-copy change is described and nonempty, otherwise {ui.revset('@-')}"
@@ -262,6 +272,7 @@ def build_parser() -> ArgumentParser:
     add_help_argument(
         submit_parser,
         "--base",
+        dest="base_revset",
         metavar="REVSET",
         help=(
             "Submit changes above this submitted ancestor, using its PR branch as the base; "
@@ -281,6 +292,7 @@ def build_parser() -> ArgumentParser:
         dest="descriptions",
         metavar="TARGET=FILE",
         action="append",
+        default=[],
         help=(
             t"Read a PR body from {ui.metavar('FILE')}; {ui.metavar('TARGET')} is a change ID, "
             t"or {ui.code('stack')} for an overview comment on the head PR"
@@ -314,11 +326,14 @@ def build_parser() -> ArgumentParser:
         type=Path,
         help="Reopen a saved editor file instead of generating a new one",
     )
+    submit_parser.set_defaults(draft_mode="default")
     submit_draft_mode = submit_parser.add_mutually_exclusive_group()
     add_help_argument(
         submit_draft_mode,
         "--draft",
-        action="store_true",
+        dest="draft_mode",
+        action="store_const",
+        const="draft",
         help=(
             t"Create new PRs as drafts; use {ui.option('--draft=all')} to make existing "
             t"PRs drafts too"
@@ -326,27 +341,30 @@ def build_parser() -> ArgumentParser:
     )
     submit_draft_mode.add_argument(
         "--draft-all",
-        action="store_true",
+        dest="draft_mode",
+        action="store_const",
+        const="draft_all",
         help=SUPPRESS,
     )
     submit_draft_mode.add_argument(
         "--open",
-        dest="open",
-        action="store_true",
+        dest="draft_mode",
+        action="store_const",
+        const="open",
         help="Mark submitted PRs ready for review, including existing drafts",
     )
     add_help_argument(
         submit_parser,
         "--label",
         dest="labels",
-        action="append",
+        action=_CommaSeparatedValues,
         help="Add labels to the selected PRs; comma-separated or repeat the option",
     )
     add_help_argument(
         submit_parser,
         "--reviewers",
         dest="reviewers",
-        action="append",
+        action=_CommaSeparatedValues,
         metavar="USERS",
         help="Request reviews by GitHub username; comma-separated or repeat the option",
     )
@@ -354,7 +372,7 @@ def build_parser() -> ArgumentParser:
         submit_parser,
         "--team-reviewers",
         dest="team_reviewers",
-        action="append",
+        action=_CommaSeparatedValues,
         metavar="TEAMS",
         help="Request reviews by team slug; comma-separated or repeat the option",
     )
@@ -1083,17 +1101,17 @@ def _extract_config_overrides(argv: Sequence[str]) -> tuple[JjCliArgs, list[str]
     return JjCliArgs(argv=tuple(parts)), remaining
 
 
-def _forward_handler(
-    function: Callable[..., int],
+def _forward_handler[T](
+    function: Callable[..., T],
     **arg_sources: str,
-) -> Callable[[Namespace], int]:
+) -> Callable[[Namespace], T]:
     """Build a command handler that forwards argparse values as keyword arguments."""
 
     parameter_sources = {
         name: arg_sources.get(name, name) for name in signature(function).parameters
     }
 
-    def handler(args: Namespace) -> int:
+    def handler(args: Namespace) -> T:
         values = vars(args)
         return function(**{name: values[source] for name, source in parameter_sources.items()})
 

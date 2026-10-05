@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, NamedTuple
@@ -24,7 +25,7 @@ class SubmitOptions:
     """Parsed submit options after CLI normalization."""
 
     base_revset: str | None
-    descriptions: tuple[str, ...]
+    descriptions: Sequence[str]
     describe_with: str | None
     draft_mode: SubmitDraftMode
     dry_run: bool

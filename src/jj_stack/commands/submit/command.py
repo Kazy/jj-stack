@@ -22,7 +22,7 @@ Common examples:
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from functools import partial
@@ -32,7 +32,6 @@ import jj_stack.console as console
 import jj_stack.ui as ui
 from jj_stack.bootstrap import CommandContext, GlobalOptions, bootstrap_context
 from jj_stack.concurrency import wait_for_read_tasks
-from jj_stack.config import parse_comma_separated_flag_values
 from jj_stack.errors import CliError
 from jj_stack.github.client import GithubClient
 from jj_stack.github.error_messages import observe_github_repo, read_or_stop
@@ -107,61 +106,11 @@ object with string `title` and `body` fields.
 """
 
 
-def submit(
-    *,
-    global_options: GlobalOptions,
-    base: str | None,
-    descriptions: Sequence[str] | None,
-    describe_with: str | None,
-    draft: bool,
-    draft_all: bool,
-    dry_run: bool,
-    edit: bool | Path,
-    labels: Sequence[str] | None,
-    open_: bool,
-    re_request: bool,
-    reviewers: Sequence[str] | None,
-    revset: str | None,
-    team_reviewers: Sequence[str] | None,
-) -> int:
+def submit(*, global_options: GlobalOptions, options: SubmitOptions) -> int:
     """CLI entrypoint for `submit`."""
 
-    context = bootstrap_context(global_options)
-    options = SubmitOptions(
-        base_revset=base,
-        descriptions=tuple(descriptions or ()),
-        describe_with=describe_with,
-        draft_mode=_submit_draft_mode(draft=draft, draft_all=draft_all, open_=open_),
-        dry_run=dry_run,
-        edit=edit,
-        labels=parse_comma_separated_flag_values(labels),
-        re_request=re_request,
-        reviewers=parse_comma_separated_flag_values(reviewers),
-        revset=revset,
-        team_reviewers=parse_comma_separated_flag_values(team_reviewers),
-    )
-    asyncio.run(
-        run_submit_async(
-            context=context,
-            options=options,
-        )
-    )
+    asyncio.run(run_submit_async(context=bootstrap_context(global_options), options=options))
     return 0
-
-
-def _submit_draft_mode(
-    *,
-    draft: bool,
-    draft_all: bool,
-    open_: bool,
-) -> SubmitDraftMode:
-    if draft_all:
-        return "draft_all"
-    if draft:
-        return "draft"
-    if open_:
-        return "open"
-    return "default"
 
 
 def _pr_metadata(*, context: CommandContext, options: SubmitOptions) -> PRMetadataAction:
