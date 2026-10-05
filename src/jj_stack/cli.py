@@ -828,7 +828,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         _print_early_cli_error(error, normalized_argv=normalized_argv)
         return resolve_exit_code(error)
     args.cli_args = cli_args
-    args.normalized_argv = tuple(normalized_argv)
     effective_color = (
         "never" if args.command == "in-use" or args.output == "jsonl" else args.color
     )
