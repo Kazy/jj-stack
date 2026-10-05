@@ -215,7 +215,7 @@ async def publish_prepared(
         )
     with console.spinner(description="Pushing PR branches"):
         prepared_inputs.client.mutate_remote_pr_branch_refs(
-            remote=prepared_inputs.remote.name,
+            remote=run.target.remote.name,
             updates=pr_branch_ref_updates,
         )
     with console.progress(
@@ -226,7 +226,7 @@ async def publish_prepared(
             github_client=github_client,
             on_progress=progress.advance,
             plans=pr_plans,
-            repository_id=prepared_inputs.repository_id,
+            repository_id=trunk.github_repo.node_id,
             state_store=run.context.state_store,
         )
     pr_numbers = tuple(pr.number for _, pr in submitted)

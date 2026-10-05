@@ -9,7 +9,6 @@ from typing import Literal, NamedTuple
 
 from jj_stack.identifiers import ChangeId, CommitId
 from jj_stack.jj.client import JjClient
-from jj_stack.models.git import GitRemote
 from jj_stack.models.github import GithubPR
 from jj_stack.models.stack import LocalCommit, LocalStack
 from jj_stack.models.tracking import TrackedPR, TrackingState
@@ -154,9 +153,6 @@ class PublicationInputs:
     generated_stack_description: GeneratedDescription | None
     is_maximal_path: bool
     pr_template: str
-    remote: GitRemote
-    # GitHub's node ID for the repo, which opening a pull request needs.
-    repository_id: str
     stack: LocalStack
     state: TrackingState
     submitted_commits: dict[ChangeId, LocalCommit]

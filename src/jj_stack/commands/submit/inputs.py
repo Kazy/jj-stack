@@ -9,7 +9,6 @@ from jj_stack.bootstrap import CommandContext
 from jj_stack.errors import CliError, ConflictedStackError, UsageError
 from jj_stack.identifiers import ChangeId, short_change_id
 from jj_stack.jj.client import JjClient
-from jj_stack.models.git import GitRemote
 from jj_stack.models.github import GithubStackPR
 from jj_stack.models.stack import LocalCommit, LocalStack
 from jj_stack.models.tracking import TrackingState
@@ -85,8 +84,6 @@ def prepare_publication_inputs(
     context: CommandContext,
     template: str,
     stack: LocalStack,
-    remote: GitRemote,
-    repository_id: str,
     state: TrackingState,
     is_maximal_path: bool,
     descriptions: Sequence[str] = (),
@@ -117,8 +114,6 @@ def prepare_publication_inputs(
         generated_stack_description=generated_stack_description,
         is_maximal_path=is_maximal_path,
         pr_template=template,
-        remote=remote,
-        repository_id=repository_id,
         stack=stack,
         state=state,
         submitted_commits={change.change_id: change for change in submitted_commits},

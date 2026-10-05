@@ -63,8 +63,6 @@ async def refresh_selected_prs(
             template=template,
             stack=path.stack,
             state=state,
-            remote=run.target.remote,
-            repository_id=trunk.github_repo.node_id,
             is_maximal_path=path.is_maximal,
         )
     except ConflictedStackError as error:
