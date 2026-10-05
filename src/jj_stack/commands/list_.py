@@ -77,16 +77,9 @@ class StackRow:
     subject: str
 
 
-@dataclass(frozen=True, slots=True)
-class OrphanRow:
-    """One orphaned PR — its local change has left every current stack."""
-
-    branch: str
-    change_id: ChangeId
-    pr: dict[str, object]
-    pr_label: ui.Message
-    state: ui.Message
-    subject: str
+# Orphaned PRs: their local change has left every current stack.
+_ORPHAN_STATE = ui.semantic_text("orphan", "warning", "heading")
+_ORPHAN_SUBJECT = "local change missing"
 
 
 def list_(
@@ -153,11 +146,8 @@ def _run_list(
         if (tracked := state.prs.get(change.change_id)) is not None
     )
     duplicate_branch_names = frozenset(duplicate_branches)
-    orphan_rows = tuple(
-        _build_orphan_row(orphan, repo=github_repo)
-        for orphan in enumerate_orphaned_records(state, ordered)
-    )
-    if not ordered and not orphan_rows and not as_json:
+    orphans = enumerate_orphaned_records(state, ordered)
+    if not ordered and not orphans and not as_json:
         console.output("No stacks.")
         return 0
     rows: tuple[StackRow, ...] = ()
@@ -202,52 +192,37 @@ def _run_list(
         )
     incomplete = bool(duplicate_branches) or any(row.incomplete for row in rows)
     if as_json:
-        console.machine_output(_json_list_payload(orphan_rows=orphan_rows, rows=rows))
+        console.machine_output(_json_list_payload(orphans=orphans, rows=rows))
         return EXIT_INCOMPLETE if incomplete else 0
     jj_color = color_when(stdout_is_tty=sys.stdout.isatty())
     with console.spinner(description="Rendering jj change IDs"):
         rendered_change_ids = context.jj_client.render_short_change_ids(
-            (*(row.head_change_id for row in rows), *(row.change_id for row in orphan_rows)),
+            (*(row.head_change_id for row in rows), *(orphan.change_id for orphan in orphans)),
             color_when=jj_color,
         )
     console.output(
         _stack_table(
-            orphan_rows=orphan_rows,
+            github_repo=github_repo,
+            orphans=orphans,
             rendered_change_ids=rendered_change_ids,
             rows=rows,
         )
     )
-    _emit_orphan_hint(orphan_rows)
+    _emit_orphan_hint(orphans)
     _emit_divergence_hints(rows)
     _emit_stale_stacks_advisory(rows)
     return EXIT_INCOMPLETE if incomplete else 0
 
 
-def _build_orphan_row(
-    orphan: OrphanedRecord,
-    *,
-    repo: GithubRepoAddress | None,
-) -> OrphanRow:
-    pr_number = orphan.pr_identity.pr_number
-    return OrphanRow(
-        branch=orphan.pr_identity.head_ref,
-        change_id=orphan.change_id,
-        pr=saved_pr_json(orphan.pr_identity),
-        pr_label=format_pr_label(pr_number, repo=repo),
-        state=ui.semantic_text("orphan", "warning", "heading"),
-        subject="local change missing",
-    )
-
-
 def _json_list_payload(
     *,
-    orphan_rows: tuple[OrphanRow, ...],
+    orphans: tuple[OrphanedRecord, ...],
     rows: tuple[StackRow, ...],
 ) -> dict[str, object]:
     return {
         "rows": [
             *(_json_stack_row(row) for row in rows),
-            *(_json_orphan_row(row) for row in orphan_rows),
+            *(_json_orphan_row(orphan) for orphan in orphans),
         ],
     }
 
@@ -271,19 +246,19 @@ def _json_stack_row(row: StackRow) -> dict[str, object]:
     return payload
 
 
-def _json_orphan_row(row: OrphanRow) -> dict[str, object]:
+def _json_orphan_row(orphan: OrphanedRecord) -> dict[str, object]:
     return {
-        "branch": row.branch,
-        "change_id": row.change_id,
-        "pr": row.pr,
-        "status": ui.plain_text(row.state),
-        "subject": row.subject,
+        "branch": orphan.pr_identity.head_ref,
+        "change_id": orphan.change_id,
+        "pr": saved_pr_json(orphan.pr_identity),
+        "status": ui.plain_text(_ORPHAN_STATE),
+        "subject": _ORPHAN_SUBJECT,
         "type": "orphan",
     }
 
 
-def _emit_orphan_hint(orphan_rows: tuple[OrphanRow, ...]) -> None:
-    if not orphan_rows:
+def _emit_orphan_hint(orphans: tuple[OrphanedRecord, ...]) -> None:
+    if not orphans:
         return
     command = ui.cmd("jj-stack cleanup --pull-request orphans --close")
     console.note(t"To close orphaned PRs and clean up, run {command}; add --dry-run to preview.")
@@ -510,7 +485,8 @@ def _format_pr_summary(
 
 def _stack_table(
     *,
-    orphan_rows: tuple[OrphanRow, ...],
+    github_repo: GithubRepoAddress | None,
+    orphans: tuple[OrphanedRecord, ...],
     rendered_change_ids: dict[ChangeId, str],
     rows: tuple[StackRow, ...],
 ) -> ui.DataTable:
@@ -523,13 +499,13 @@ def _stack_table(
         )
         for row in rows
     ]
-    for orphan in orphan_rows:
+    for orphan in orphans:
         stack_table_rows.append(
             (
                 rendered_change_ids[orphan.change_id],
-                orphan.pr_label,
-                orphan.state,
-                t"{orphan.subject}",
+                format_pr_label(orphan.pr_identity.pr_number, repo=github_repo),
+                _ORPHAN_STATE,
+                t"{_ORPHAN_SUBJECT}",
             )
         )
     return ui.DataTable(
