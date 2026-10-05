@@ -78,11 +78,7 @@ def project_selected_path(observation: SelectedPathObservation) -> SelectedStack
             stack=stack,
         )
 
-    commits_by_id: dict[CommitId, LocalCommit] = {
-        commit.commit_id: commit
-        for commit in sorted(observation.commits, key=lambda item: item.commit_id)
-    }
-    commits_by_id[selected.commit_id] = selected
+    commits_by_id = {commit.commit_id: commit for commit in observation.commits}
 
     head_first: list[LocalCommit] = []
     current = selected
@@ -120,10 +116,7 @@ def project_repo_paths(
 ) -> RepoStackPaths:
     """Derive maximal parent-connected paths from ordinary visible candidates."""
 
-    commits_by_id: dict[CommitId, LocalCommit] = {
-        commit.commit_id: commit
-        for commit in sorted(observation.commits, key=lambda item: item.commit_id)
-    }
+    commits_by_id = {commit.commit_id: commit for commit in observation.commits}
     candidates = _ordinary_candidates(
         candidate_commit_ids=observation.candidate_commit_ids,
         commits_by_id=commits_by_id,
@@ -161,7 +154,7 @@ def project_repo_paths(
 def _maximal_candidate_commit_ids(
     candidates: dict[CommitId, LocalCommit],
 ) -> frozenset[CommitId]:
-    parent_commit_ids = {commit.parents[0] for commit in candidates.values() if commit.parents}
+    parent_commit_ids = {commit.parents[0] for commit in candidates.values()}
     return frozenset(candidates.keys() - parent_commit_ids)
 
 
