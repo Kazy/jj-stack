@@ -95,26 +95,6 @@ class FakeGithubPR:
     def graphql_state(self) -> str:
         return "merged" if self.merged_at is not None else self.state
 
-    def to_payload(self, repo: FakeGithubRepo) -> dict[str, object]:
-        self._refresh_head_sha(repo)
-        return {
-            "base": {"label": f"{repo.full_name}:{self.base_ref}", "ref": self.base_ref},
-            "body": self.body,
-            "draft": self.is_draft,
-            "head": {
-                "label": self.head_label,
-                "ref": self.head_ref,
-                "sha": self.head_sha,
-            },
-            "html_url": f"{_WEB_ORIGIN}/{repo.full_name}/pull/{self.number}",
-            "merge_commit_sha": self.merge_commit_sha,
-            "merged_at": self.merged_at,
-            "node_id": self.node_id,
-            "number": self.number,
-            "state": self.state,
-            "title": self.title,
-        }
-
     def to_graphql_payload(self, repo: FakeGithubRepo) -> dict[str, object]:
         head_target = self._refresh_head_sha(repo)
         return {
@@ -1420,7 +1400,7 @@ def _register_pr_routes(app: FastAPI, fake_state: FakeGithubState) -> None:
             pr,
             state=state,
         )
-        return pr.to_payload(repo)
+        return {}
 
     @app.post(
         "/repos/{owner}/{repo_name}/pulls/{pr_number}/requested_reviewers",
@@ -1442,7 +1422,7 @@ def _register_pr_routes(app: FastAPI, fake_state: FakeGithubState) -> None:
         pr.requested_team_reviewers = list(
             dict.fromkeys((*pr.requested_team_reviewers, *requested_teams))
         )
-        return pr.to_payload(repo)
+        return {}
 
     @app.post("/repos/{owner}/{repo_name}/issues/{issue_number}/labels")
     async def add_labels(
