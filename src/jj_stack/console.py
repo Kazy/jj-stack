@@ -610,10 +610,7 @@ def spinner(*, description: str, report_changes: bool = False) -> Generator[Spin
             handle.update(description)
             yield handle
         else:
-            progress_console = _progress_console(
-                stream=_STDERR_STREAM, color_mode=rich_color_mode(_EFFECTIVE_COLOR)
-            )
-            with progress_console.status(description) as status:
+            with _STDERR_CONSOLE._console.status(description) as status:
                 yield _RichSpinnerHandle(status=status)
 
 
@@ -632,15 +629,12 @@ def progress(*, description: str, total: int) -> Generator[ProgressLike]:
         yield _NullProgress()
         return
 
-    progress_console = _progress_console(
-        stream=_STDERR_STREAM, color_mode=rich_color_mode(_EFFECTIVE_COLOR)
-    )
     with Progress(
         SpinnerColumn(),
         TextColumn("{task.description}"),
         BarColumn(),
         TaskProgressColumn(),
-        console=progress_console,
+        console=_STDERR_CONSOLE._console,
         transient=True,
     ) as progress_render:
         task_id = progress_render.add_task(description, total=total)
@@ -652,14 +646,6 @@ def _stream_supports_live_progress(stream: IO[str]) -> bool:
         return bool(stream.isatty())
     except OSError:
         return False
-
-
-def _progress_console(*, stream: IO[str], color_mode: ColorMode) -> Console:
-    if color_mode == "always":
-        return Console(file=stream, force_terminal=True, no_color=False)
-    if color_mode == "never":
-        return Console(file=stream, no_color=True)
-    return Console(file=stream)
 
 
 def _append_rich_text(
