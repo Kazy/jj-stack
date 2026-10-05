@@ -5,6 +5,7 @@ from __future__ import annotations
 import jj_stack.console as console
 import jj_stack.ui as ui
 from jj_stack.formatting import format_pr_label, render_commit_blocks, render_commit_lines
+from jj_stack.jj.client import JjClient
 from jj_stack.models.github import GithubPR
 from jj_stack.models.stack import LocalCommit
 
@@ -33,7 +34,8 @@ def print_submit_preview(
     elif github_stack_plan.creates_stack(len(plans)):
         actions.append(f"would create a GitHub stack with {len(plans)} PRs")
     print_submit_rows(
-        inputs=inputs,
+        client=inputs.client,
+        trunk=inputs.stack.trunk,
         rows=tuple((plan.prepared.change, _preview_summary(plan)) for plan in plans),
         heading="Dry run: planned changes:",
     )
@@ -57,7 +59,12 @@ def print_submitted_changes(
         label = format_pr_label(pr.number, is_draft=pr.is_draft, url=pr.html_url)
         parts.append(label if plan.action == "created" else t"{label} {plan.action}")
         rows.append((plan.prepared.change, ui.join(lambda part: part, parts)))
-    print_submit_rows(inputs=inputs, rows=tuple(rows), heading="Submitted changes:")
+    print_submit_rows(
+        client=inputs.client,
+        trunk=inputs.stack.trunk,
+        rows=tuple(rows),
+        heading="Submitted changes:",
+    )
     if changes:
         _, top_pr = changes[-1]
         console.output(
@@ -67,16 +74,16 @@ def print_submitted_changes(
 
 def print_submit_rows(
     *,
-    inputs: PublicationInputs,
+    client: JjClient,
+    trunk: LocalCommit,
     rows: tuple[tuple[LocalCommit, ui.Message], ...],
     heading: str,
 ) -> None:
     """Render a submit's change rows and trunk using the user's jj log format."""
 
-    trunk = inputs.stack.trunk
     with console.spinner(description="Rendering jj log"):
         blocks = render_commit_blocks(
-            client=inputs.client,
+            client=client,
             changes=tuple(change for change, _ in rows) + (trunk,),
         )
     if rows:

@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from jj_stack.commands.submit.descriptions import (
     preserve_external_pr_text,
     read_pr_template,
     resolve_generated_descriptions,
 )
 from jj_stack.commands.submit.models import GeneratedDescription
+from jj_stack.errors import UsageError
 from jj_stack.identifiers import ChangeId
 from jj_stack.jj.client import JjClient
 from jj_stack.models.github import GithubBranchRef, GithubPR, GithubPRHead
@@ -57,6 +60,20 @@ def test_empty_pr_template_repeats_the_subject(tmp_path: Path) -> None:
     body = _resolve_default_bodies(tmp_path, description="fix: subject only\n")
 
     assert body == "fix: subject only"
+
+
+def test_stack_description_requires_more_than_one_change(tmp_path: Path) -> None:
+    change = make_change(commit_id="c1", change_id="ch1", description="fix: subject\n")
+
+    with pytest.raises(UsageError, match="more than one change"):
+        resolve_generated_descriptions(
+            descriptions=("stack=body.md",),
+            describe_with=None,
+            jj_client=JjClient(tmp_path),
+            changes=(change,),
+            selected_revset="@-",
+            template="",
+        )
 
 
 def _live_pr(*, body: str, title: str) -> GithubPR:

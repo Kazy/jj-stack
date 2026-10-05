@@ -91,18 +91,6 @@ def test_submit_uses_github_template_only_when_no_local_file_exists(
     assert fake_repo.prs[2].body == "Description body"
 
 
-def test_submit_validates_description_options_even_when_no_changes_are_selected(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
-    repo, fake_repo = init_fake_github_repo(tmp_path)
-    config_path = configure_submit_environment(monkeypatch, tmp_path, fake_repo)
-
-    assert run_main(repo, config_path, "submit", "trunk()", "--describe", "stack=body.md") == 5
-    captured = capsys.readouterr()
-    assert "more than one change" in captured.err
-    assert fake_repo.prs == {}
-
-
 def _assert_stack_prs_match_dag(
     *,
     fake_repo,

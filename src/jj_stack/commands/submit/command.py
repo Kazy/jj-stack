@@ -467,17 +467,7 @@ async def _observe_submit(
         print_selected_line(stack.head.change_id, stack.head.subject)
 
     if not stack.changes:
-        prepared_inputs = prepare_publication_inputs(
-            context=context,
-            template="",
-            stack=stack,
-            remote=remote,
-            state=state,
-            is_maximal_path=selection.is_maximal_path,
-            descriptions=options.descriptions,
-            describe_with=options.describe_with,
-        )
-        print_submit_rows(inputs=prepared_inputs, rows=(), heading="Submitted changes:")
+        print_submit_rows(client=client, trunk=stack.trunk, rows=(), heading="Submitted changes:")
         return None
 
     branch_resolutions = resolve_pr_branches(
