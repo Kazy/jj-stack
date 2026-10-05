@@ -53,7 +53,7 @@ from jj_stack.github.resolution import GithubTarget, UnresolvedGithubTarget, res
 from jj_stack.identifiers import ChangeId, short_change_id
 from jj_stack.jj.client import PRRefUpdate
 from jj_stack.models.git import GitRemote
-from jj_stack.models.github import GithubIssueComment, GithubPR, GithubStack
+from jj_stack.models.github import GithubIssueComment, GithubPR, GithubRepo, GithubStack
 from jj_stack.models.tracking import TrackedPR, TrackingState
 from jj_stack.stack.change_state import classify, enumerate_orphaned_records
 from jj_stack.stack.pr_facts import (
@@ -91,6 +91,7 @@ class _CleanupPass:
     """Inputs shared by every PR in one cleanup pass against GitHub."""
 
     github_client: GithubClient
+    github_repo: GithubRepo | None
     prepared: PreparedCleanup
     record_action: Callable[[CleanupAction], None]
     remote: GitRemote
@@ -208,7 +209,9 @@ async def cleanup_tracked_prs(
 
     try:
         actions = await _run_cleanup_async(
-            github_client=run.github, prepared_cleanup=prepared_cleanup
+            github_client=run.github,
+            github_repo=None if run.trunk is None else run.trunk.github_repo,
+            prepared_cleanup=prepared_cleanup,
         )
     except (CliError, GithubClientError) as error:
         if error_hint(error) is not None:
@@ -349,6 +352,7 @@ def _resolve_cleanup_change_ids(
 async def _run_cleanup_async(
     *,
     github_client: GithubClient | None = None,
+    github_repo: GithubRepo | None = None,
     prepared_cleanup: PreparedCleanup,
 ) -> tuple[CleanupAction, ...]:
     actions: list[CleanupAction] = []
@@ -373,7 +377,9 @@ async def _run_cleanup_async(
         )
         async with client_context as client:
             await _run_tracked_pr_cleanup_pass(
-                _CleanupPass(client, prepared_cleanup, record_action, github_target.remote)
+                _CleanupPass(
+                    client, github_repo, prepared_cleanup, record_action, github_target.remote
+                )
             )
     elif candidates:
         for change_id, candidate in candidates.items():
@@ -399,6 +405,7 @@ async def _run_tracked_pr_cleanup_pass(cleanup_pass: _CleanupPass) -> None:
         change_ids=tuple(candidates),
         context=prepared_cleanup.context,
         github_client=github_client,
+        github_repo_snapshot=cleanup_pass.github_repo,
         include_dependents=True,
         include_open_head_prs=True,
         remote_name=cleanup_pass.remote.name,

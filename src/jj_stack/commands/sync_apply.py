@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 import jj_stack.console as console
@@ -100,6 +100,7 @@ async def apply_selected_convergence(
 ) -> int:
     """Apply a stack sync plan in dependency order."""
 
+    run = replace(run, trunk=trunk)
     actions = plan.actions
     if isinstance(plan, GithubStackRebasePlan):
         _apply_github_stack_rebase(run, plan=plan, trunk_commit_id=trunk_commit_id)

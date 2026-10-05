@@ -210,6 +210,17 @@ async def _run_global_plan(
         console.warning(
             t"Did not sync or clean up {pr_label} for {ui.change_id(change_id)}: {reason}."
         )
+    observed_trunk = None
+    if plan.finishes or plan.sync_change_ids:
+        github_repo = facts.pr_facts.github_repo
+        branch, _targets = observe_trunk_branch(
+            jj_client=run.context.jj_client,
+            github_repo_state=github_repo,
+            remote=run.target.remote,
+            trunk_commit_id=trunk_commit_id,
+        )
+        observed_trunk = ObservedTrunk(github_repo=github_repo, branch=branch)
+        run = replace(run, trunk=observed_trunk)
     results = await apply_pr_finishes(run, plan.finishes)
     cleanup_blocked = await cleanup_tracked_prs(
         run,
@@ -223,16 +234,6 @@ async def _run_global_plan(
         or any(result.outcome == "skipped" for result in results)
         or cleanup_blocked
     )
-    observed_trunk = None
-    if plan.sync_change_ids:
-        github_repo = facts.pr_facts.github_repo
-        branch, _targets = observe_trunk_branch(
-            jj_client=run.context.jj_client,
-            github_repo_state=github_repo,
-            remote=run.target.remote,
-            trunk_commit_id=trunk_commit_id,
-        )
-        observed_trunk = ObservedTrunk(github_repo=github_repo, branch=branch)
     return 1 if blocked else 0, observed_trunk, plan.sync_change_ids
 
 
