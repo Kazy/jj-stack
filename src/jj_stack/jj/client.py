@@ -812,15 +812,7 @@ class JjClient:
         ordered_updates = tuple(updates)
         if not ordered_updates:
             return
-        branches = tuple(update.branch for update in ordered_updates)
-        if len(set(branches)) != len(branches):
-            raise ValueError("remote PR branch update set contains duplicate branches")
-        refs = tuple(f"refs/heads/{branch}" for branch in branches)
-        if any(
-            update.expected_target is None and update.desired_target is None
-            for update in ordered_updates
-        ):
-            raise ValueError("cannot delete a PR branch ref that is expected to be absent")
+        refs = tuple(f"refs/heads/{update.branch}" for update in ordered_updates)
 
         if all(update.desired_target == update.expected_target for update in ordered_updates):
             return
