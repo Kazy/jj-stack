@@ -35,15 +35,11 @@ _CHECK_ROLLUP_STATUSES: dict[str, CheckRollupStatus] = {
 class GithubRepoPermissions(BaseModel):
     """The token's permissions on the repo; GitHub reports them only to authenticated requests."""
 
-    model_config = ConfigDict(extra="ignore")
-
     push: bool
 
 
 class GithubRepo(BaseModel):
     """Subset of repo fields used by the client."""
-
-    model_config = ConfigDict(extra="ignore")
 
     allow_merge_commit: bool | None = None
     allow_rebase_merge: bool | None = None
@@ -57,15 +53,11 @@ class GithubRepo(BaseModel):
 class GithubBranchRef(BaseModel):
     """Subset of branch-ref fields embedded in pull request payloads."""
 
-    model_config = ConfigDict(extra="ignore")
-
     ref: str
 
 
 class GithubPRHead(BaseModel):
     """PR head branch and commit, with the owner label when available."""
-
-    model_config = ConfigDict(extra="ignore")
 
     label: str | None = None
     ref: str
@@ -74,8 +66,6 @@ class GithubPRHead(BaseModel):
 
 class GithubStackPR(BaseModel):
     """Pull request state embedded in a GitHub stack response."""
-
-    model_config = ConfigDict(extra="ignore")
 
     head: GithubPRHead
     number: int
@@ -88,8 +78,6 @@ class GithubStackPR(BaseModel):
 
 class GithubStack(BaseModel):
     """Ordered pull requests in one GitHub stack."""
-
-    model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
     number: int
     prs: tuple[GithubStackPR, ...] = Field(alias="pull_requests", min_length=1)
@@ -116,8 +104,6 @@ class GithubStack(BaseModel):
 class GithubStackMergeDetails(BaseModel):
     """Details returned by GitHub's asynchronous stack merge endpoint."""
 
-    model_config = ConfigDict(extra="ignore")
-
     expected_head_sha: CommitId | None = None
     merge_action: str | None = None
     merge_method: str | None = None
@@ -128,8 +114,6 @@ class GithubStackMergeDetails(BaseModel):
 
 class GithubStackMerge(BaseModel):
     """Pending or terminal asynchronous stack merge state."""
-
-    model_config = ConfigDict(extra="ignore")
 
     details: GithubStackMergeDetails
     status: Literal["enqueued", "failed", "merged", "pending"]
@@ -150,7 +134,7 @@ class GithubStackMergeSubmission(BaseModel):
 class GithubPR(BaseModel):
     """Pull request fields read from GitHub's GraphQL API."""
 
-    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True)
 
     base: GithubBranchRef
     body: str | None = None
@@ -254,15 +238,11 @@ class _GraphqlHead(BaseModel):
 class GithubPRReviewUser(BaseModel):
     """Subset of review-author fields used to summarize PR reviews."""
 
-    model_config = ConfigDict(extra="ignore")
-
     login: str
 
 
 class GithubPRReview(BaseModel):
     """Subset of PR review fields used by the client."""
-
-    model_config = ConfigDict(extra="ignore")
 
     id: int
     state: str
@@ -271,8 +251,6 @@ class GithubPRReview(BaseModel):
 
 class GithubIssueComment(BaseModel):
     """Subset of issue-comment fields used by the client."""
-
-    model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
     body: str
     id: int = Field(alias="databaseId")
