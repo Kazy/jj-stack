@@ -7,10 +7,10 @@ from dataclasses import replace
 
 import jj_stack.console as console
 import jj_stack.ui as ui
-from jj_stack.bootstrap import CommandContext
+from jj_stack.commands.github_run import GithubRun, ObservedTrunk
 from jj_stack.errors import CliError, error_message
 from jj_stack.formatting import format_pr_label
-from jj_stack.github.client import GithubClient, GithubClientError
+from jj_stack.github.client import GithubClientError
 from jj_stack.github.overview_comments import STACK_OVERVIEW_COMMENT_MARKER
 from jj_stack.identifiers import ChangeId, CommitId
 from jj_stack.jj.client import PRRefUpdate
@@ -83,18 +83,17 @@ def plan_pr_updates(
 
 
 async def publish_prepared(
+    run: GithubRun,
     *,
-    context: CommandContext,
-    github_client: GithubClient,
     prepared_inputs: PublicationInputs,
     pr_plans: tuple[PRSyncPlan, ...],
     remote_targets: dict[str, CommitId],
     retry_hint: ui.Message,
     observed_stacks: tuple[GithubStack, ...],
-    trunk_branch: str,
+    trunk: ObservedTrunk,
     trunk_targets: dict[str, CommitId],
-    dry_run: bool,
 ) -> None:
+    github_client = run.github
     client = prepared_inputs.client
     state = prepared_inputs.state
     prepared_changes = tuple(plan.prepared for plan in pr_plans)
@@ -188,7 +187,7 @@ async def publish_prepared(
             ),
             generated_stack_description=prepared_inputs.generated_stack_description,
             # A single selected PR based on another PR is still part of a larger stack.
-            is_lone_pr=len(pr_plans) == 1 and pr_plans[0].base_branch == trunk_branch,
+            is_lone_pr=len(pr_plans) == 1 and pr_plans[0].base_branch == trunk.branch,
         )
     except CliError as error:
         raise CliError(
@@ -196,7 +195,7 @@ async def publish_prepared(
             hint=(error.hint, " ", retry_hint) if error.hint is not None else retry_hint,
         ) from error
 
-    if dry_run:
+    if run.dry_run:
         print_submit_preview(
             inputs=prepared_inputs,
             plans=pr_plans,
@@ -212,7 +211,7 @@ async def publish_prepared(
         await retarget_pr_bases_before_branch_push(
             github_client=github_client,
             prs=retarget_prs,
-            trunk_branch=trunk_branch,
+            trunk_branch=trunk.branch,
         )
     with console.spinner(description="Pushing PR branches"):
         prepared_inputs.client.mutate_remote_pr_branch_refs(
@@ -228,7 +227,7 @@ async def publish_prepared(
             on_progress=progress.advance,
             plans=pr_plans,
             repository_id=prepared_inputs.repository_id,
-            state_store=context.state_store,
+            state_store=run.context.state_store,
         )
     pr_numbers = tuple(pr.number for _, pr in submitted)
     submitted_force_pushes_by_pr = {

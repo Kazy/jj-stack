@@ -31,11 +31,11 @@ from pathlib import Path
 import jj_stack.console as console
 import jj_stack.ui as ui
 from jj_stack.bootstrap import CommandContext, GlobalOptions, bootstrap_context
+from jj_stack.commands.github_run import GithubRun, ObservedTrunk
 from jj_stack.concurrency import wait_for_read_tasks
 from jj_stack.errors import CliError
-from jj_stack.github.client import GithubClient
 from jj_stack.github.error_messages import observe_github_repo, read_or_stop
-from jj_stack.github.resolution import require_github_repo, select_submit_remote
+from jj_stack.github.resolution import GithubTarget, require_github_repo, select_submit_remote
 from jj_stack.identifiers import ChangeId, CommitId, short_change_id
 from jj_stack.jj.client import JjClient
 from jj_stack.models.git import GitRemote
@@ -234,7 +234,7 @@ class _SubmitObservation:
     prepared_changes: tuple[PreparedSubmitChange, ...]
     prepared_inputs: PublicationInputs
     remote_targets: dict[str, CommitId]
-    trunk_branch: str
+    trunk: ObservedTrunk
     trunk_targets: dict[str, CommitId]
 
     @property
@@ -250,20 +250,18 @@ async def run_submit_async(
     # The selected line is only rendered when submit picked the default head for the user.
     print_selected = options.revset is None
     remote = select_submit_remote(context.jj_client.list_git_remotes())
+    target = GithubTarget(remote=remote, repo=require_github_repo(remote))
     generated_edit_path: Path | None = None
     settle_pr_text: Callable[[_SubmitObservation], _SubmitObservation] | None = None
-    async with context.open_github_client(repo=require_github_repo(remote)) as github_client:
+    async with context.open_github_client(repo=target.repo) as github_client:
+        run = GithubRun(
+            context=context, dry_run=options.dry_run, github=github_client, target=target
+        )
         if options.edit or options.describe_with is not None:
             # An editor session or a describe helper can take as long as it likes, so neither
             # runs under the operation lock. The locked pass observes again and accepts their
             # text only if it still names the selected changes.
-            observed = await _observe_submit(
-                context=context,
-                github_client=github_client,
-                options=options,
-                print_selected=print_selected,
-                remote=remote,
-            )
+            observed = await _observe_submit(run, options=options, print_selected=print_selected)
             if observed is None:
                 return
             print_selected = False
@@ -295,15 +293,11 @@ async def run_submit_async(
             try:
                 locked.enter_context(
                     operation_lock(
-                        context.state_store, command="submit", mutating=not options.dry_run
+                        context.state_store, command="submit", mutating=not run.dry_run
                     )
                 )
                 observed = await _observe_submit(
-                    context=context,
-                    github_client=github_client,
-                    options=options,
-                    print_selected=print_selected,
-                    remote=remote,
+                    run, options=options, print_selected=print_selected
                 )
             except CliError as error:
                 if generated_edit_path is not None:
@@ -321,8 +315,7 @@ async def run_submit_async(
             if settle_pr_text is not None:
                 observed = settle_pr_text(observed)
             await _publish_observed(
-                context=context,
-                github_client=github_client,
+                run,
                 observed=observed,
                 options=options,
                 retry_hint=retry_hint,
@@ -366,15 +359,11 @@ def _apply_helper_text(
 
 
 async def _observe_submit(
-    *,
-    context: CommandContext,
-    github_client: GithubClient,
-    options: SubmitOptions,
-    print_selected: bool,
-    remote: GitRemote,
+    run: GithubRun, *, options: SubmitOptions, print_selected: bool
 ) -> _SubmitObservation | None:
     """Observe the selected stack and its GitHub state; None when nothing is selected."""
 
+    context, github_client, remote = run.context, run.github, run.target.remote
     state = context.state_store.load()
     with console.spinner(description="Preparing submit"):
         selection = select_submit_inputs(
@@ -578,15 +567,14 @@ async def _observe_submit(
         prepared_changes=prepared_changes,
         prepared_inputs=prepared_inputs,
         remote_targets=remote_targets,
-        trunk_branch=trunk_branch,
+        trunk=ObservedTrunk(github_repo=github_repo_state, branch=trunk_branch),
         trunk_targets=trunk_targets,
     )
 
 
 async def _publish_observed(
+    run: GithubRun,
     *,
-    context: CommandContext,
-    github_client: GithubClient,
     observed: _SubmitObservation,
     options: SubmitOptions,
     retry_hint: ui.Message,
@@ -594,7 +582,7 @@ async def _publish_observed(
     prepared_changes = observed.prepared_changes
     re_request_reviewers = (
         await load_re_request_reviewers(
-            github_client=github_client,
+            github_client=run.github,
             prs=tuple(pr for prepared in prepared_changes if (pr := prepared.pr) is not None),
         )
         if options.re_request
@@ -604,20 +592,18 @@ async def _publish_observed(
         bottom_base_branch=observed.bottom_base_branch,
         drafts=observed.drafts,
         generated_descriptions=observed.generated_descriptions,
-        metadata=_pr_metadata(context=context, options=options),
+        metadata=_pr_metadata(context=run.context, options=options),
         explicit_metadata=bool(options.labels or options.reviewers or options.team_reviewers),
         prepared_changes=prepared_changes,
         prior_reviewers=re_request_reviewers,
     )
     await publish_prepared(
-        context=context,
-        github_client=github_client,
+        run,
         prepared_inputs=observed.prepared_inputs,
         pr_plans=pr_plans,
         remote_targets=observed.remote_targets,
         retry_hint=retry_hint,
         observed_stacks=observed.observed_stacks,
-        trunk_branch=observed.trunk_branch,
+        trunk=observed.trunk,
         trunk_targets=observed.trunk_targets,
-        dry_run=options.dry_run,
     )

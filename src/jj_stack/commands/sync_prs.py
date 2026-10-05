@@ -115,8 +115,7 @@ async def refresh_selected_prs(
         for merged in actions.on_trunk
     )
     await publish_prepared(
-        context=context,
-        github_client=run.github,
+        run,
         prepared_inputs=inputs,
         pr_plans=plans,
         remote_targets=remote_targets,
@@ -124,7 +123,6 @@ async def refresh_selected_prs(
         t"{ui.cmd(f'jj-stack submit {short_change_id(selected_ids[-1])}')}, then clean up "
         t"the merged pull requests with {ui.join(ui.cmd, cleanup_commands)}.",
         observed_stacks=github_stacks,
-        trunk_branch=trunk.branch,
+        trunk=trunk,
         trunk_targets={trunk.branch: path.stack.trunk.commit_id},
-        dry_run=False,
     )
