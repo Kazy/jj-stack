@@ -150,9 +150,6 @@ def submit(
     asyncio.run(
         run_submit_async(
             context=context,
-            # The selected line is only rendered when submit picked the
-            # default head for the user.
-            on_prepared=print_selected_line if revset is None else None,
             options=options,
         )
     )
@@ -327,9 +324,10 @@ class _SubmitObservation:
 async def run_submit_async(
     *,
     context: CommandContext,
-    on_prepared: Callable[[str, str], None] | None,
     options: SubmitOptions,
 ) -> None:
+    # The selected line is only rendered when submit picked the default head for the user.
+    print_selected = options.revset is None
     remote = select_submit_remote(context.jj_client.list_git_remotes())
     generated_edit_path: Path | None = None
     settle_pr_text: Callable[[_SubmitObservation], _SubmitObservation] | None = None
@@ -341,12 +339,12 @@ async def run_submit_async(
             observed = await _observe_submit(
                 context=context,
                 github_client=github_client,
-                on_prepared=on_prepared,
                 options=options,
+                print_selected=print_selected,
             )
             if observed is None:
                 return
-            on_prepared = None
+            print_selected = False
             if options.edit:
                 document_path = edit_pr_document(
                     descriptions=observed.generated_descriptions,
@@ -381,8 +379,8 @@ async def run_submit_async(
                 observed = await _observe_submit(
                     context=context,
                     github_client=github_client,
-                    on_prepared=on_prepared,
                     options=options,
+                    print_selected=print_selected,
                 )
             except CliError as error:
                 if generated_edit_path is not None:
@@ -448,8 +446,8 @@ async def _observe_submit(
     *,
     context: CommandContext,
     github_client: GithubClient,
-    on_prepared: Callable[[str, str], None] | None,
     options: SubmitOptions,
+    print_selected: bool,
 ) -> _SubmitObservation | None:
     """Observe the selected stack and its GitHub state; None when nothing is selected."""
 
@@ -465,8 +463,8 @@ async def _observe_submit(
     stack = selection.stack
     explicit_base = selection.explicit_base
     base_branch = explicit_base.branch if explicit_base is not None else None
-    if on_prepared is not None:
-        on_prepared(stack.head.change_id, stack.head.subject)
+    if print_selected:
+        print_selected_line(stack.head.change_id, stack.head.subject)
 
     if not stack.changes:
         prepared_inputs = prepare_publication_inputs(
