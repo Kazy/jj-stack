@@ -208,22 +208,18 @@ def _recover_interrupted_first_submissions(
 ) -> tuple[ResolvedPRBranch, ...]:
     """Reuse only one suffix candidate whose Git header records the full change ID."""
 
-    candidates_by_change: dict[ChangeId, dict[str, CommitId]] = {}
     unresolved = tuple(
         resolution for resolution in resolutions if resolution.change_id not in tracked_prs
     )
     if not unresolved:
         return resolutions
+    replacements: dict[ChangeId, str] = {}
     for resolution in unresolved:
-        candidates_by_change[resolution.change_id] = {
+        candidates = {
             branch: target
             for branch, target in remote_targets.items()
             if pr_branch_matches_change(branch, resolution.change_id)
         }
-
-    replacements: dict[ChangeId, str] = {}
-    for resolution in unresolved:
-        candidates = candidates_by_change[resolution.change_id]
         if not candidates:
             continue
         if len(candidates) != 1:
@@ -271,9 +267,7 @@ def _submit_remote_branch_queries(
     tracked_prs: Mapping[ChangeId, TrackedPR],
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     exact_branches = tuple(
-        dict.fromkeys(
-            resolution.branch for resolution in resolutions if resolution.change_id in tracked_prs
-        )
+        resolution.branch for resolution in resolutions if resolution.change_id in tracked_prs
     )
     if base_branch is not None and base_branch not in exact_branches:
         exact_branches = (*exact_branches, base_branch)
