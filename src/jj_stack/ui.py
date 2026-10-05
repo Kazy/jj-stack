@@ -39,8 +39,8 @@ class PrefixedLine:
 
     prefix: Message
     body: Message | StatusBadge
-    message_labels: tuple[str, ...] | None = None
-    prefix_labels: tuple[str, ...] | None = None
+    message_labels: tuple[str, ...] = ()
+    prefix_labels: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,8 +167,8 @@ def prefixed_line(
     prefix: Message,
     body: Message | StatusBadge,
     *,
-    message_labels: tuple[str, ...] | None = None,
-    prefix_labels: tuple[str, ...] | None = None,
+    message_labels: tuple[str, ...] = (),
+    prefix_labels: tuple[str, ...] = (),
 ) -> PrefixedLine:
     """Build a hanging-indent line without choosing a concrete renderer."""
 

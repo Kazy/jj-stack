@@ -554,13 +554,13 @@ def action_row(*, kind: str | None, status: ActionStatus, body: ui.Message) -> N
     """Print one action as a status glyph, an optional kind label, and its body."""
 
     if status == "applied":
-        prefix, prefix_style, body_style = "  ✓", ("signature status good",), None
+        prefix, prefix_style, body_style = "  ✓", ("signature status good",), ()
     elif status == "planned":
-        prefix, prefix_style, body_style = "  ~", ("hint heading",), None
+        prefix, prefix_style, body_style = "  ~", ("hint heading",), ()
     elif status == "blocked":
         prefix, prefix_style, body_style = "  ✗", ("error heading",), ("warning heading",)
     else:
-        prefix, prefix_style, body_style = "  -", ("hint heading",), None
+        prefix, prefix_style, body_style = "  -", ("hint heading",), ()
     message: ui.Message = body if kind is None else (ui.semantic_text(kind, "prefix"), ": ", body)
     output(
         ui.prefixed_line(
@@ -703,15 +703,13 @@ def _render_prefixed_line(line: ui.PrefixedLine) -> _HangingIndentRenderable:
     """Render one semantic hanging-indent line."""
 
     prefix_width = max(1, len(ui.plain_text(line.prefix)))
-    message_style = (
-        semantic_style(*line.message_labels) if line.message_labels is not None else None
-    )
+    message_style = semantic_style(*line.message_labels)
     if isinstance(line.body, ui.StatusBadge):
         message_cell = _coerce_renderable(line.body)
     else:
         message_cell: RenderableType = rich_text(line.body, style=message_style)
 
-    prefix_style = semantic_style(*line.prefix_labels) if line.prefix_labels is not None else None
+    prefix_style = semantic_style(*line.prefix_labels)
     prefix_cell: RenderableType = rich_text(line.prefix, style=prefix_style)
     return _HangingIndentRenderable(
         prefix=prefix_cell,
