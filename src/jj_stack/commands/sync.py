@@ -263,7 +263,7 @@ async def _run_global_plan(
         dry_run=dry_run,
         github=github,
     )
-    cleanup = await cleanup_tracked_prs(
+    cleanup_blocked = await cleanup_tracked_prs(
         change_ids=tuple(result.change_id for result in results if result.outcome != "skipped"),
         context=context,
         dry_run=dry_run,
@@ -276,7 +276,7 @@ async def _run_global_plan(
     blocked = (
         bool(plan.blocked)
         or any(result.outcome == "skipped" for result in results)
-        or any(action.status == "blocked" for action in cleanup.actions)
+        or cleanup_blocked
     )
     return 1 if blocked else 0, facts.pr_facts.github_repo, plan.sync_change_ids, trunk_branch
 

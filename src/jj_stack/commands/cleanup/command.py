@@ -31,7 +31,6 @@ from jj_stack.bootstrap import CommandContext, bootstrap_context
 from jj_stack.commands.cleanup.actions import (
     UNTRUSTED_PR_STATES,
     CleanupAction,
-    CleanupResult,
     apply_overview_comment_cleanup,
     apply_remote_branch_cleanup,
     blocked_pr_action,
@@ -180,7 +179,7 @@ def _run_cleanup_command(
         ):
             console.warning(plain_text(message))
 
-    result = asyncio.run(
+    actions = asyncio.run(
         _run_cleanup_async(
             on_action=_build_action_streamer(
                 header=("Cleanup preview:" if prepared_cleanup.dry_run else "Cleanup:"),
@@ -188,9 +187,9 @@ def _run_cleanup_command(
             prepared_cleanup=prepared_cleanup,
         )
     )
-    if not result.actions:
+    if not actions:
         console.output("No cleanup actions needed.")
-    return 1 if any(action.status == "blocked" for action in result.actions) else 0
+    return 1 if any(action.status == "blocked" for action in actions) else 0
 
 
 async def cleanup_tracked_prs(
@@ -202,8 +201,8 @@ async def cleanup_tracked_prs(
     github_target: GithubTarget,
     planned_detached_dependents: frozenset[int] = frozenset(),
     planned_local_removals: frozenset[ChangeId] = frozenset(),
-) -> CleanupResult:
-    """Run cleanup for PRs reconciled by another command."""
+) -> bool:
+    """Run cleanup for PRs reconciled by another command, returning whether any was blocked."""
 
     state = context.state_store.load()
     prepared_cleanup = PreparedCleanup(
@@ -227,7 +226,7 @@ async def cleanup_tracked_prs(
         return t"Finish cleanup with {ui.join(ui.cmd, commands)}."
 
     try:
-        result = await _run_cleanup_async(
+        actions = await _run_cleanup_async(
             github_client=github_client,
             on_action=_build_action_streamer(
                 header="Cleanup preview:" if dry_run else "Cleanup:",
@@ -240,9 +239,10 @@ async def cleanup_tracked_prs(
         if error_hint(error) is not None:
             raise
         raise CliError(error_message(error), hint=retry_hint()) from error
-    if any(action.status == "blocked" for action in result.actions):
+    blocked = any(action.status == "blocked" for action in actions)
+    if blocked:
         console.note(retry_hint())
-    return result
+    return blocked
 
 
 async def cleanup_stack_without_local_copies(
@@ -272,7 +272,7 @@ async def cleanup_stack_without_local_copies(
     selected = {pr_number}
     if stack is not None:
         selected.update(pr.number for pr in stack.historical_prs)
-    result = await cleanup_tracked_prs(
+    blocked = await cleanup_tracked_prs(
         change_ids=tuple(
             linked_change_id
             for linked_change_id, tracked in state.prs.items()
@@ -283,7 +283,7 @@ async def cleanup_stack_without_local_copies(
         github_client=github_client,
         github_target=github_target,
     )
-    return 1 if any(action.status == "blocked" for action in result.actions) else 0
+    return 1 if blocked else 0
 
 
 def _prepare_cleanup(
@@ -388,7 +388,7 @@ async def _run_cleanup_async(
     prepared_cleanup: PreparedCleanup,
     preview_detached_dependents: frozenset[int] = frozenset(),
     preview_local_removals: frozenset[ChangeId] = frozenset(),
-) -> CleanupResult:
+) -> tuple[CleanupAction, ...]:
     actions: list[CleanupAction] = []
 
     def record_action(action: CleanupAction) -> None:
@@ -424,7 +424,7 @@ async def _run_cleanup_async(
                     t"cannot be resolved",
                 )
             )
-    return CleanupResult(actions=tuple(actions))
+    return tuple(actions)
 
 
 async def _run_tracked_pr_cleanup_pass(

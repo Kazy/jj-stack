@@ -36,13 +36,6 @@ class CleanupAction:
     body: Message
 
 
-@dataclass(frozen=True, slots=True)
-class CleanupResult:
-    """Rendered cleanup result for the selected repo."""
-
-    actions: tuple[CleanupAction, ...]
-
-
 type UntrustedPR = PRAmbiguous | PRIdentityMismatch | PRMissing
 
 # The saved link no longer identifies one open pull request, so nothing may act on it.

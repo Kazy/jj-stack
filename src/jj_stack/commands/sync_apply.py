@@ -415,7 +415,7 @@ async def _cleanup_reconciled_prs(
             )
             continue
         cleanup_change_ids.append(result.change_id)
-    cleanup = await cleanup_tracked_prs(
+    blocked = await cleanup_tracked_prs(
         change_ids=tuple(cleanup_change_ids),
         context=context,
         dry_run=dry_run,
@@ -424,7 +424,7 @@ async def _cleanup_reconciled_prs(
         planned_detached_dependents=frozenset(pr.number for pr in remaining_prs.values()),
         planned_local_removals=frozenset(cleanup_change_ids),
     )
-    return 1 if any(action.status == "blocked" for action in cleanup.actions) else 0
+    return 1 if blocked else 0
 
 
 def _observe_removal_dependencies(
