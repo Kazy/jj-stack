@@ -505,6 +505,5 @@ def _stack_table(
             ui.TableColumn("state"),
             ui.TableColumn("description"),
         ),
-        padding=(0, 0),
         rows=tuple(stack_table_rows),
     )
