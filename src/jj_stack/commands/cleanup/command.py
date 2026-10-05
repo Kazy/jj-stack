@@ -130,33 +130,20 @@ def cleanup(
         command="cleanup",
         mutating=not dry_run,
     ):
-        return _run_cleanup_command(
-            close=close,
-            context=context,
-            dry_run=dry_run,
-            pr=pr,
-            revset=revset,
-        )
+        with console.spinner(description="Loading PR state"):
+            prepared_cleanup = _prepare_cleanup(
+                close=close,
+                context=context,
+                dry_run=dry_run,
+                pr=pr,
+                revset=revset,
+            )
+        return _run_cleanup_command(prepared_cleanup)
 
 
-def _run_cleanup_command(
-    *,
-    close: bool,
-    context: CommandContext,
-    dry_run: bool,
-    pr: str | None,
-    revset: str | None,
-) -> int:
+def _run_cleanup_command(prepared_cleanup: PreparedCleanup) -> int:
     """Render and run cleanup for the selected pull requests."""
 
-    with console.spinner(description="Loading PR state"):
-        prepared_cleanup = _prepare_cleanup(
-            close=close,
-            context=context,
-            dry_run=dry_run,
-            pr=pr,
-            revset=revset,
-        )
     github_target = prepared_cleanup.github_target
     if prepared_cleanup.candidates and isinstance(github_target, UnresolvedGithubTarget):
         for message in remote_and_github_unavailable_messages(
