@@ -1775,7 +1775,7 @@ def _branch_target(ref: _GraphqlRef) -> tuple[str, CommitId]:
     return qualified.removeprefix("refs/heads/"), ref.target.oid
 
 
-def build_github_client(*, repo: GithubRepoAddress, token: str | None = None) -> GithubClient:
+def build_github_client(*, repo: GithubRepoAddress, token: str | None) -> GithubClient:
     headers = {
         "Accept": "application/vnd.github+json",
         "User-Agent": "jj-stack/dev",

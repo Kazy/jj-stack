@@ -335,7 +335,7 @@ def rich_color_mode(color_mode: RequestedColorMode | None) -> ColorMode:
 @contextmanager
 def configured_console(
     *,
-    color: RequestedColorMode | None = None,
+    color: RequestedColorMode | None,
     semantic_styles: SemanticStyles = _NO_STYLES,
     stderr: IO[str] | None = None,
     stdout: IO[str] | None = None,
